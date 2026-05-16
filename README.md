@@ -99,6 +99,7 @@ Arrow keys switch between Today, 7 Days, 30 Days, Month, and 6 Months (use `--fr
 |---|----------|-----------|-----|
 | <img src="assets/providers/claude.jpg" width="28" /> | Claude Code | Yes | [claude.md](docs/providers/claude.md) |
 | <img src="assets/providers/claude.jpg" width="28" /> | Claude Desktop | Yes | [claude.md](docs/providers/claude.md) |
+| <img src="assets/providers/cline.svg" width="28" /> | Cline | Yes | [cline.md](docs/providers/cline.md) |
 | <img src="assets/providers/codex.png" width="28" /> | Codex (OpenAI) | Yes | [codex.md](docs/providers/codex.md) |
 | <img src="assets/providers/cursor.jpg" width="28" /> | Cursor | Yes | [cursor.md](docs/providers/cursor.md) |
 | <img src="assets/providers/cursor-agent.jpg" width="28" /> | cursor-agent | Yes | [cursor-agent.md](docs/providers/cursor-agent.md) |
@@ -379,9 +380,9 @@ These are starting points, not verdicts. A 60% cache hit on a single experimenta
 
 **OpenClaw** stores agent sessions as JSONL at `~/.openclaw/agents/*.jsonl`. Also checks legacy paths `.clawdbot`, `.moltbot`, `.moldbot`. Token usage comes from assistant message `usage` blocks; model from `modelId` or `message.model` fields.
 
-**IBM Bob** stores IDE task history in `User/globalStorage/ibm.bob-code/tasks/<task-id>/` under the IBM Bob application data directory. CodeBurn reads `ui_messages.json` for API request token/cost records and `api_conversation_history.json` for the selected model, with support for both GA (`IBM Bob`) and preview (`Bob-IDE`) app data folders.
+**Cline / Roo Code / KiloCode** are Cline-family coding agents. CodeBurn reads `ui_messages.json` from each task directory, filtering `type: "say"` entries with `say: "api_req_started"` to extract token counts. Cline scans both VS Code's `globalStorage/saoudrizwan.claude-dev` and `~/.cline/data`.
 
-**Roo Code / KiloCode** are Cline-family VS Code extensions. CodeBurn reads `ui_messages.json` from each task directory in VS Code's `globalStorage`, filtering `type: "say"` entries with `say: "api_req_started"` to extract token counts.
+**IBM Bob** stores IDE task history in `User/globalStorage/ibm.bob-code/tasks/<task-id>/` under the IBM Bob application data directory. CodeBurn reads `ui_messages.json` for API request token/cost records and `api_conversation_history.json` for the selected model, with support for both GA (`IBM Bob`) and preview (`Bob-IDE`) app data folders.
 
 CodeBurn deduplicates messages (by API message ID for Claude, by cumulative token cross-check for Codex, by conversation/timestamp for Cursor, by session ID for Gemini, by session+message ID for OpenCode, by responseId for Pi/OMP), filters by date range per entry, and classifies each turn.
 

@@ -842,6 +842,7 @@ enum SupportedCurrency: String, CaseIterable, Identifiable {
 enum ProviderFilter: String, CaseIterable, Identifiable {
     case all = "All"
     case claude = "Claude"
+    case cline = "Cline"
     case codex = "Codex"
     case cursor = "Cursor"
     case cursorAgent = "Cursor Agent"
@@ -867,6 +868,7 @@ enum ProviderFilter: String, CaseIterable, Identifiable {
         switch self {
         case .cursor: ["cursor"]
         case .cursorAgent: ["cursor-agent", "cursor agent"]
+        case .cline: ["cline"]
         case .rooCode: ["roo-code", "roo code"]
         case .kiloCode: ["kilo-code", "kilocode"]
         case .ibmBob: ["ibm-bob", "ibm bob"]
@@ -881,6 +883,7 @@ enum ProviderFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: "all"
         case .claude: "claude"
+        case .cline: "cline"
         case .codex: "codex"
         case .cursor: "cursor"
         case .cursorAgent: "cursor-agent"

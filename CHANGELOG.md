@@ -63,6 +63,12 @@
 ## 0.9.8 - 2026-05-10
 
 ### Added (CLI)
+- **Cline provider support.** CodeBurn now reads Cline task usage from both
+  VS Code globalStorage (`saoudrizwan.claude-dev`) and Cline's
+  `~/.cline/data` task root. It reuses the existing Cline-family parser for
+  `ui_messages.json` usage entries, deduplicates migrated tasks by the newest
+  `ui_messages.json`, and exposes Cline in CLI provider filters, docs, and the
+  macOS menubar provider tabs. Closes #130.
 - **Multiple Claude config directories.** Set `CLAUDE_CONFIG_DIRS` to an
   OS-delimited list of paths (`:`-separated on POSIX, `;`-separated on
   Windows) to scan more than one Claude data directory in a single run.

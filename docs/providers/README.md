@@ -11,6 +11,7 @@ For the architectural picture, see `../architecture.md`.
 | Provider | Storage | Source | Test |
 |---|---|---|---|
 | [Claude](claude.md) | JSONL (no parser) | `src/providers/claude.ts` | none (covered indirectly) |
+| [Cline](cline.md) | JSON | `src/providers/cline.ts` | `tests/providers/cline.test.ts` |
 | [Codex](codex.md) | JSONL | `src/providers/codex.ts` | `tests/providers/codex.test.ts` |
 | [Copilot](copilot.md) | JSONL | `src/providers/copilot.ts` | `tests/providers/copilot.test.ts` |
 | [Droid](droid.md) | JSONL | `src/providers/droid.ts` | `tests/providers/droid.test.ts` |
@@ -39,7 +40,7 @@ For the architectural picture, see `../architecture.md`.
 
 | Helper | Used by | Source |
 |---|---|---|
-| [vscode-cline-parser](vscode-cline-parser.md) | `ibm-bob`, `kilo-code`, `roo-code` | `src/providers/vscode-cline-parser.ts` |
+| [vscode-cline-parser](vscode-cline-parser.md) | `cline`, `ibm-bob`, `kilo-code`, `roo-code` | `src/providers/vscode-cline-parser.ts` |
 
 ## File Format
 
