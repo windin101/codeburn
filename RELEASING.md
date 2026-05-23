@@ -140,85 +140,15 @@ No manual action is needed; the workflow handles everything.
 
 After the workflow completes, the GitHub Release page shows the zip and sha256 files. The installed CLI command `codeburn menubar --force` fetches the newest `mac-v*` menubar release that includes both assets, verifies the checksum and bundle identity, and installs it into `~/Applications`.
 
-## Homebrew Tap Update
+## Homebrew Core
 
-The Homebrew tap lives at `https://github.com/getagentseal/homebrew-codeburn`. A maintainer with access to that repository must manually update the formula.
-
-### 1. Fetch the npm Tarball
-
-When the CLI is published to npm, get its download URL and SHA-256 hash:
+CodeBurn is in homebrew-core. After publishing a new CLI version to npm, the homebrew-core formula is updated automatically by Homebrew's bot or can be bumped manually:
 
 ```bash
-npm view codeburn@0.9.8 dist.tarball
-npm view codeburn@0.9.8 dist.shasum
+brew bump-formula-pr codeburn --url "https://registry.npmjs.org/codeburn/-/codeburn-<VERSION>.tgz"
 ```
 
-This returns a URL like `https://registry.npmjs.org/codeburn/-/codeburn-0.9.8.tgz` and a SHA-256 hash.
-
-Alternatively, compute the hash yourself:
-
-```bash
-curl -sL https://registry.npmjs.org/codeburn/-/codeburn-0.9.8.tgz | shasum -a 256
-```
-
-### 2. Update the Formula
-
-Edit `Formula/codeburn.rb` in the homebrew-codeburn tap:
-
-```ruby
-class Codeburn < Formula
-  desc "See where your AI coding tokens go"
-  homepage "https://github.com/getagentseal/codeburn"
-  url "https://registry.npmjs.org/codeburn/-/codeburn-0.9.8.tgz"
-  sha256 "<computed-hash>"
-  license "MIT"
-
-  depends_on "node"
-
-  def install
-    system "npm", "install", *Language::Node.std_npm_install_args(libexec)
-    bin.install_symlink Dir[libexec/"bin/*"]
-  end
-
-  test do
-    system "#{bin}/codeburn", "--version"
-  end
-end
-```
-
-Update the `url` and `sha256` fields with the new version's values.
-
-### 3. Test Locally
-
-Before pushing, test the formula locally:
-
-```bash
-brew install --build-from-source Formula/codeburn.rb
-codeburn --version
-```
-
-### 4. Commit and Push
-
-Commit the formula change:
-
-```bash
-git add Formula/codeburn.rb
-git commit -m "codeburn: bump to 0.9.8"
-git push origin main
-```
-
-Users can now install with:
-
-```bash
-brew tap getagentseal/codeburn
-brew install codeburn
-```
-
-Or upgrade an existing installation:
-
-```bash
-brew upgrade codeburn
-```
+Users install with `brew install codeburn` and upgrade with `brew upgrade codeburn`.
 
 ## Replacing Assets on an Existing Release
 
@@ -249,4 +179,4 @@ For the menubar, tag a new mac-v0.9.9 and let the workflow build and upload it. 
 
 ## Summary
 
-The CLI release is manual: bump the version, update `CHANGELOG.md`, commit, run `npm publish`, then tag and create a GitHub Release. The macOS menubar release is automated: pushing a `mac-v*` tag fires `.github/workflows/release-menubar.yml`, which builds, signs, zips, and publishes the bundle. The Homebrew formula at `getagentseal/homebrew-codeburn` is updated by hand after each CLI publish.
+The CLI release is manual: bump the version, update `CHANGELOG.md`, commit, run `npm publish`, then tag and create a GitHub Release. The macOS menubar release is automated: pushing a `mac-v*` tag fires `.github/workflows/release-menubar.yml`, which builds, signs, zips, and publishes the bundle. The homebrew-core formula is updated automatically or via `brew bump-formula-pr`.

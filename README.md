@@ -51,7 +51,6 @@ npm install -g codeburn
 Or with Homebrew:
 
 ```bash
-brew tap getagentseal/codeburn
 brew install codeburn
 ```
 

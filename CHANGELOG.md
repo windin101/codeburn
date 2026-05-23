@@ -310,7 +310,7 @@
 ## 0.9.5 - 2026-05-01
 
 ### Added (CLI)
-- **Homebrew tap.** `brew tap getagentseal/codeburn && brew install codeburn`.
+- **Homebrew.** `brew install codeburn` (originally via tap, now in homebrew-core).
 - **GPT-5.3 and DeepSeek display names.** GPT-5.3, DeepSeek Coder, DeepSeek Coder Max, DeepSeek R1.
 
 ### Fixed (macOS menubar)
