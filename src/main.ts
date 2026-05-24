@@ -3,7 +3,7 @@ import { Command } from 'commander'
 import { installMenubarApp } from './menubar-installer.js'
 import { exportCsv, exportJson, type PeriodExport } from './export.js'
 import { loadPricing, setModelAliases } from './models.js'
-import { parseAllSessions, filterProjectsByName, filterProjectsByDateRange, clearSessionCache } from './parser.js'
+import { parseAllSessions, filterProjectsByName, filterProjectsByDateRange, filterProjectsByDays, clearSessionCache } from './parser.js'
 import { convertCost } from './currency.js'
 import { renderStatusBar } from './format.js'
 import { type PeriodData, type ProviderCost, type BreakdownArrays } from './menubar-json.js'
@@ -13,15 +13,10 @@ import { aggregateProjectsIntoDays, buildPeriodDataFromDays, dateKey } from './d
 import { CATEGORY_LABELS, type DateRange, type ProjectSummary, type TaskCategory } from './types.js'
 import { aggregateModelEfficiency } from './model-efficiency.js'
 import { renderDashboard } from './dashboard.js'
-import { formatDateRangeLabel, parseDateRangeFlags, getDateRange, toPeriod, type Period } from './cli-date.js'
+import { formatDateRangeLabel, parseDateRangeFlags, parseDayFlag, parseDaysFlag, getDateRange, toPeriod, type Period } from './cli-date.js'
 import { runOptimize, scanAndDetect } from './optimize.js'
 import { renderCompare } from './compare.js'
 import { getAllProviders } from './providers/index.js'
-import {
-  installAntigravityStatusLineHook,
-  runAgyStatusLineHook,
-  uninstallAntigravityStatusLineHook,
-} from './antigravity-statusline.js'
 import { clearPlan, readConfig, readPlan, readPlans, saveConfig, savePlan, getConfigFilePath, type Plan, type PlanId, type PlanProvider } from './config.js'
 import { clampResetDay, getPlanUsageOrNull, getPlanUsages, type PlanUsage } from './plan-usage.js'
 import { getPresetPlan, isPlanId, isPlanProvider, PLAN_IDS, PLAN_PROVIDERS, planDisplayName } from './plans.js'
@@ -361,6 +356,7 @@ program
   .command('report', { isDefault: true })
   .description('Interactive usage dashboard')
   .option('-p, --period <period>', 'Starting period: today, week, 30days, month, all', 'week')
+  .option('--day <date>', 'Single day to review (YYYY-MM-DD, today, or yesterday). Overrides --period when set')
   .option('--from <date>', 'Start date (YYYY-MM-DD). Overrides --period when set')
   .option('--to <date>', 'End date (YYYY-MM-DD). Overrides --period when set')
   .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
@@ -371,7 +367,12 @@ program
   .action(async (opts) => {
     assertFormat(opts.format, ['tui', 'json'], 'report')
     let customRange: DateRange | null = null
+    let daySelection: ReturnType<typeof parseDayFlag> = null
     try {
+      if (opts.day && (opts.from || opts.to)) {
+        throw new Error('--day cannot be combined with --from or --to')
+      }
+      daySelection = parseDayFlag(opts.day)
       customRange = parseDateRangeFlags(opts.from, opts.to)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -382,21 +383,23 @@ program
     const period = toPeriod(opts.period)
     if (opts.format === 'json') {
       await loadPricing()
-      if (customRange) {
-        const label = formatDateRangeLabel(opts.from, opts.to)
+      if (daySelection || customRange) {
+        const range = daySelection?.range ?? customRange!
+        const label = daySelection?.label ?? formatDateRangeLabel(opts.from, opts.to)
+        const periodKey = daySelection ? 'day' : 'custom'
         const projects = filterProjectsByName(
-          await parseAllSessions(customRange, opts.provider),
+          await parseAllSessions(range, opts.provider),
           opts.project,
           opts.exclude,
         )
-        console.log(JSON.stringify(await attachPlanSummaries(buildJsonReport(projects, label, 'custom')), null, 2))
+        console.log(JSON.stringify(await attachPlanSummaries(buildJsonReport(projects, label, periodKey)), null, 2))
       } else {
         await runJsonReport(period, opts.provider, opts.project, opts.exclude)
       }
       return
     }
     const customRangeLabel = customRange ? formatDateRangeLabel(opts.from, opts.to) : undefined
-    await renderDashboard(period, opts.provider, opts.refresh, opts.project, opts.exclude, customRange, customRangeLabel)
+    await renderDashboard(period, opts.provider, opts.refresh, opts.project, opts.exclude, customRange, customRangeLabel, daySelection?.day)
   })
 
 function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
@@ -447,6 +450,10 @@ program
   .option('--project <name>', 'Show only projects matching name (repeatable)', collect, [])
   .option('--exclude <name>', 'Exclude projects matching name (repeatable)', collect, [])
   .option('--period <period>', 'Primary period for menubar-json: today, week, 30days, month, all', 'today')
+  .option('--day <date>', 'Single day for menubar-json (YYYY-MM-DD, today, or yesterday). Overrides --period when set')
+  .option('--from <date>', 'Start date (YYYY-MM-DD) for custom range')
+  .option('--to <date>', 'End date (YYYY-MM-DD) for custom range')
+  .option('--days <dates>', 'Comma-separated dates (YYYY-MM-DD) for multi-day selection')
   .option('--no-optimize', 'Skip optimize findings (menubar-json only, faster)')
   .action(async (opts) => {
     assertFormat(opts.format, ['terminal', 'menubar-json', 'json'], 'status')
@@ -454,7 +461,14 @@ program
     const pf = opts.provider
     const fp = (p: ProjectSummary[]) => filterProjectsByName(p, opts.project, opts.exclude)
     if (opts.format === 'menubar-json') {
-      const periodInfo = getDateRange(opts.period)
+      const daysSelection = parseDaysFlag(opts.days)
+      const customRange = daysSelection ? null : parseDateRangeFlags(opts.from, opts.to)
+      const daySelection = parseDayFlag(opts.day)
+      const periodInfo = daysSelection
+        ? { range: daysSelection.range, label: daysSelection.label }
+        : customRange
+        ? { range: customRange, label: formatDateRangeLabel(opts.from, opts.to) }
+        : daySelection ?? getDateRange(opts.period)
       const now = new Date()
       const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
       const todayRange: DateRange = { start: todayStart, end: now }
@@ -462,6 +476,7 @@ program
       const yesterdayStr = toDateString(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
       const rangeStartStr = toDateString(periodInfo.range.start)
       const rangeEndStr = toDateString(periodInfo.range.end)
+      const historicalRangeEndStr = rangeEndStr < yesterdayStr ? rangeEndStr : yesterdayStr
       const isAllProviders = pf === 'all'
 
       let todayAllProjects: ProjectSummary[] | null = null
@@ -491,25 +506,33 @@ program
         cache = await hydrateCache()
         const todayProjects = await getTodayAllProjects()
         const todayDays = await getTodayAllDays()
-        const historicalDays = getDaysInRange(cache, rangeStartStr, yesterdayStr)
+        const historicalDays = rangeStartStr <= historicalRangeEndStr
+          ? getDaysInRange(cache, rangeStartStr, historicalRangeEndStr)
+          : []
         const todayInRange = todayDays.filter(d => d.date >= rangeStartStr && d.date <= rangeEndStr)
-        const allDays = [...historicalDays, ...todayInRange].sort((a, b) => a.date.localeCompare(b.date))
+        const unfilteredDays = [...historicalDays, ...todayInRange].sort((a, b) => a.date.localeCompare(b.date))
+        const allDays = daysSelection ? unfilteredDays.filter(d => daysSelection.days.has(d.date)) : unfilteredDays
         currentData = buildPeriodDataFromDays(allDays, periodInfo.label)
-        const isTodayOnly = opts.period === 'today'
+        const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
         if (isTodayOnly) {
           scanProjects = todayProjects
           scanRange = todayRange
         } else {
-          scanProjects = fp(await parseAllSessions(periodInfo.range, 'all'))
+          const rawProjects = fp(await parseAllSessions(periodInfo.range, 'all'))
+          scanProjects = daysSelection ? filterProjectsByDays(rawProjects, daysSelection.days) : rawProjects
           scanRange = periodInfo.range
         }
       } else {
         cache = await loadDailyCache()
-        const fullProjects = fp(await parseAllSessions(periodInfo.range, pf))
+        const rawProviderProjects = fp(await parseAllSessions(periodInfo.range, pf))
+        const fullProjects = daysSelection ? filterProjectsByDays(rawProviderProjects, daysSelection.days) : rawProviderProjects
         todayProviderData = buildPeriodData(periodInfo.label, fullProjects)
         currentData = todayProviderData
         scanProjects = fullProjects
         scanRange = periodInfo.range
+      }
+      if (isAllProviders) {
+        currentData = buildPeriodData(periodInfo.label, scanProjects)
       }
 
       // PROVIDERS
@@ -519,10 +542,11 @@ program
       const displayNameByName = new Map(allProviders.map(p => [p.name, p.displayName]))
       const providers: ProviderCost[] = []
       if (isAllProviders) {
-        const allDaysForProviders = [
-          ...getDaysInRange(cache, rangeStartStr, yesterdayStr),
-          ...(await getTodayAllDays()).filter(d => d.date === todayStr),
+        const unfilteredProviderDays = [
+          ...(rangeStartStr <= historicalRangeEndStr ? getDaysInRange(cache, rangeStartStr, historicalRangeEndStr) : []),
+          ...(await getTodayAllDays()).filter(d => d.date >= rangeStartStr && d.date <= rangeEndStr),
         ]
+        const allDaysForProviders = daysSelection ? unfilteredProviderDays.filter(d => daysSelection.days.has(d.date)) : unfilteredProviderDays
         const providerTotals: Record<string, number> = {}
         for (const d of allDaysForProviders) {
           for (const [name, p] of Object.entries(d.providers)) {
@@ -864,45 +888,6 @@ program
       console.error(`\n  Menubar install failed: ${message}\n`)
       process.exit(1)
     }
-  })
-
-program
-  .command('antigravity-hook')
-  .description('Install or remove exact Antigravity CLI usage capture')
-  .argument('<action>', 'install or uninstall')
-  .option('--force', 'Replace an existing custom Antigravity CLI statusLine command')
-  .action(async (action: string, opts: { force?: boolean }) => {
-    try {
-      if (action === 'install') {
-        const result = await installAntigravityStatusLineHook(!!opts.force)
-        console.log(result === 'already-installed'
-          ? '\n  Antigravity CLI usage capture is already installed.\n'
-          : '\n  Antigravity CLI usage capture installed.\n')
-        return
-      }
-      if (action === 'uninstall') {
-        const result = await uninstallAntigravityStatusLineHook()
-        console.log(result === 'not-installed'
-          ? '\n  Antigravity CLI usage capture is not installed.\n'
-          : result === 'restored'
-            ? '\n  Antigravity CLI usage capture removed; previous statusLine restored.\n'
-          : '\n  Antigravity CLI usage capture removed.\n')
-        return
-      }
-      console.error('\n  Usage: codeburn antigravity-hook <install|uninstall>\n')
-      process.exit(1)
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      console.error(`\n  Antigravity hook failed: ${message}\n`)
-      process.exit(1)
-    }
-  })
-
-program
-  .command('agy-statusline-hook', { hidden: true })
-  .description('Internal Antigravity CLI statusLine hook')
-  .action(async () => {
-    await runAgyStatusLineHook()
   })
 
 program

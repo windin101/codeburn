@@ -11,14 +11,6 @@ struct MenuBarContent: View {
 
             Divider()
 
-            if let message = store.refreshPauseMessage {
-                RefreshPausedBanner(
-                    message: message,
-                    retry: { refreshNow() }
-                )
-                Divider()
-            }
-
             if showAgentTabs {
                 AgentTabStrip()
                 Divider()
@@ -32,7 +24,7 @@ struct MenuBarContent: View {
                         PeriodSegmentedControl()
                         Divider().opacity(0.5)
                         if isFilteredEmpty {
-                            EmptyProviderState(provider: store.selectedProvider, period: store.selectedPeriod)
+                            EmptyProviderState(provider: store.selectedProvider, periodLabel: store.selectionLabel)
                         } else {
                             HeatmapSection()
                                 .padding(.horizontal, 14)
@@ -57,22 +49,15 @@ struct MenuBarContent: View {
                 // error, etc.), surface a retry card instead of leaving the
                 // user stuck on a perpetual "Loading..." spinner.
                 if !store.hasCachedData {
-                    if store.isCurrentKeyLoading || !store.hasAttemptedCurrentKeyLoad {
-                        BurnLoadingOverlay(periodLabel: store.selectedPeriod.rawValue)
-                            .transition(.opacity)
-                    } else if let err = store.lastError {
+                    if let err = store.lastError {
                         FetchErrorOverlay(
                             error: err,
-                            periodLabel: store.selectedPeriod.rawValue,
+                            periodLabel: store.selectionLabel,
                             retry: { Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) } }
                         )
                         .transition(.opacity)
                     } else {
-                        FetchErrorOverlay(
-                            error: "The last refresh stopped before returning data. CodeBurn will keep retrying, or you can retry now.",
-                            periodLabel: store.selectedPeriod.rawValue,
-                            retry: { Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) } }
-                        )
+                        BurnLoadingOverlay(periodLabel: store.selectionLabel)
                             .transition(.opacity)
                     }
                 }
@@ -120,42 +105,16 @@ struct MenuBarContent: View {
 
 }
 
-private struct RefreshPausedBanner: View {
-    let message: String
-    let retry: () -> Void
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "pause.circle.fill")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(Theme.brandAccent)
-            Text(message)
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 6)
-            Button("Retry", action: retry)
-                .buttonStyle(.borderedProminent)
-                .tint(Theme.brandAccent)
-                .controlSize(.small)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.secondary.opacity(0.08))
-    }
-}
-
 private struct EmptyProviderState: View {
     let provider: ProviderFilter
-    let period: Period
+    let periodLabel: String
 
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "tray")
                 .font(.system(size: 26))
                 .foregroundStyle(.tertiary)
-            Text("No \(provider.rawValue) data for \(periodPhrase)")
+            Text("No \(provider.rawValue) data for \(periodLabel)")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -164,15 +123,6 @@ private struct EmptyProviderState: View {
         .padding(.vertical, 60)
     }
 
-    private var periodPhrase: String {
-        switch period {
-        case .today: "today"
-        case .sevenDays: "the last 7 days"
-        case .thirtyDays: "the last 30 days"
-        case .month: "this month"
-        case .all: "the last 6 months"
-        }
-    }
 }
 
 /// Shown when a fetch failed and the cache is still empty for this key. The
@@ -628,7 +578,11 @@ struct FooterBar: View {
     }
 
     private func refreshNow() {
-        MenuBarContent.refreshNow(store: store)
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.refreshSubscriptionNow()
+        } else {
+            Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) }
+        }
     }
 
     private enum ExportFormat {
@@ -692,19 +646,5 @@ struct FooterBar: View {
         }
 
         CLICurrencyConfig.persist(code: code)
-    }
-}
-
-private extension MenuBarContent {
-    static func refreshNow(store: AppStore) {
-        if let delegate = NSApp.delegate as? AppDelegate {
-            delegate.refreshSubscriptionNow()
-        } else {
-            Task { await store.refresh(includeOptimize: false, force: true, showLoading: true) }
-        }
-    }
-
-    func refreshNow() {
-        Self.refreshNow(store: store)
     }
 }

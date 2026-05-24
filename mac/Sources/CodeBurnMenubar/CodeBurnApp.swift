@@ -47,12 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var manualRefreshTask: Task<Void, Never>?
     private var manualRefreshGeneration: UInt64 = 0
     private var claudeQuotaRefreshTask: Task<Bool, Never>?
-    private var claudeQuotaRefreshGeneration: UInt64 = 0
     private var codexQuotaRefreshTask: Task<Bool, Never>?
-    private var codexQuotaRefreshGeneration: UInt64 = 0
     private var refreshLoopHeartbeatAt: Date = .distantPast
     private var lastLaunchAgentHeartbeatAt: Date = .distantPast
-    private var forceRefreshBackoff = RefreshBackoff()
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Set accessory policy before the app's focus chain forms. On macOS Tahoe
@@ -171,7 +168,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         manualRefreshTask?.cancel()
         manualRefreshTask = nil
         manualRefreshGeneration &+= 1
-        cancelLiveQuotaRefreshTasks()
         statusPayloadRefreshTask?.cancel()
         statusPayloadRefreshTask = nil
         statusPayloadRefreshStartedAt = nil
@@ -191,7 +187,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             manualRefreshTask?.cancel()
             manualRefreshTask = nil
             manualRefreshGeneration &+= 1
-            cancelLiveQuotaRefreshTasks()
             statusPayloadRefreshTask?.cancel()
             statusPayloadRefreshTask = nil
             statusPayloadRefreshStartedAt = nil
@@ -298,29 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private var lastRefreshTime: Date = .distantPast
 
-    private func cancelLiveQuotaRefreshTasks() {
-        claudeQuotaRefreshTask?.cancel()
-        claudeQuotaRefreshTask = nil
-        claudeQuotaRefreshGeneration &+= 1
-        codexQuotaRefreshTask?.cancel()
-        codexQuotaRefreshTask = nil
-        codexQuotaRefreshGeneration &+= 1
-    }
-
-    private func isForceRefreshPaused(now: Date = Date()) -> Bool {
-        if forceRefreshBackoff.isPaused(now: now) {
-            if let until = forceRefreshBackoff.pausedUntil {
-                store.pauseAutomaticRefresh(
-                    until: until,
-                    consecutiveStalls: forceRefreshBackoff.consecutiveStalls
-                )
-            }
-            return true
-        }
-        store.clearRefreshPause()
-        return false
-    }
-
     @discardableResult
     private func clearStaleForceRefreshIfNeeded(now: Date = Date()) -> Bool {
         if forceRefreshTask != nil {
@@ -328,9 +300,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 NSLog("CodeBurn: force refresh task had no start timestamp - clearing")
                 forceRefreshTask?.cancel()
                 forceRefreshTask = nil
-                forceRefreshStartedAt = nil
                 forceRefreshGeneration &+= 1
-                cancelLiveQuotaRefreshTasks()
                 store.resetLoadingState()
                 return true
             }
@@ -341,16 +311,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             forceRefreshTask = nil
             forceRefreshStartedAt = nil
             forceRefreshGeneration &+= 1
-            cancelLiveQuotaRefreshTasks()
-            if let pausedUntil = forceRefreshBackoff.recordStall(now: now) {
-                store.pauseAutomaticRefresh(
-                    until: pausedUntil,
-                    consecutiveStalls: forceRefreshBackoff.consecutiveStalls
-                )
-                NSLog("CodeBurn: force refresh paused after %d consecutive stalls until %@",
-                      forceRefreshBackoff.consecutiveStalls,
-                      pausedUntil as NSDate)
-            }
             store.resetLoadingState()
             return true
         }
@@ -361,7 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func clearStaleStatusPayloadRefreshIfNeeded(now: Date = Date()) -> Bool {
         if statusPayloadRefreshTask != nil {
             guard let started = statusPayloadRefreshStartedAt else {
-                NSLog("CodeBurn: status refresh task had no start timestamp - clearing")
+                NSLog("CodeBurn: today status refresh task had no start timestamp - clearing")
                 statusPayloadRefreshTask?.cancel()
                 statusPayloadRefreshTask = nil
                 statusPayloadRefreshGeneration &+= 1
@@ -369,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             }
             let elapsed = now.timeIntervalSince(started)
             guard elapsed > statusPayloadRefreshWatchdogSeconds else { return false }
-            NSLog("CodeBurn: status refresh stuck for %ds - cancelling", Int(elapsed))
+            NSLog("CodeBurn: today status refresh stuck for %ds - cancelling", Int(elapsed))
             statusPayloadRefreshTask?.cancel()
             statusPayloadRefreshTask = nil
             statusPayloadRefreshStartedAt = nil
@@ -406,7 +366,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func forceRefresh(bypassRateLimit: Bool = false, forceQuota: Bool = false) {
         let now = Date()
         _ = clearStaleForceRefreshIfNeeded(now: now)
-        guard !isForceRefreshPaused(now: now) else { return }
         if forceRefreshTask != nil {
             refreshStatusPayloadIfNeeded(reason: "blocked force refresh")
         }
@@ -427,8 +386,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             _ = await quotas
             await MainActor.run { [weak self] in
                 guard let self, self.forceRefreshGeneration == generation else { return }
-                self.forceRefreshBackoff.recordSuccess()
-                self.store.clearRefreshPause()
                 self.forceRefreshTask = nil
                 self.forceRefreshStartedAt = nil
                 self.lastRefreshTime = Date()
@@ -514,11 +471,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let task = Task { [store] in
             await store.refreshSubscriptionReportingSuccess()
         }
-        claudeQuotaRefreshGeneration &+= 1
-        let generation = claudeQuotaRefreshGeneration
         claudeQuotaRefreshTask = task
         let result = await task.value
-        if claudeQuotaRefreshGeneration == generation {
+        if claudeQuotaRefreshTask != nil {
             claudeQuotaRefreshTask = nil
         }
         return result
@@ -531,11 +486,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let task = Task { [store] in
             await store.refreshCodexReportingSuccess()
         }
-        codexQuotaRefreshGeneration &+= 1
-        let generation = codexQuotaRefreshGeneration
         codexQuotaRefreshTask = task
         let result = await task.value
-        if codexQuotaRefreshGeneration == generation {
+        if codexQuotaRefreshTask != nil {
             codexQuotaRefreshTask = nil
         }
         return result
@@ -573,12 +526,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func runRefreshLoopTick(reason: String, forcePayload: Bool = false, forceQuota: Bool = false) {
-        let now = Date()
-        refreshLoopHeartbeatAt = now
+        refreshLoopHeartbeatAt = Date()
         let hadForceRefreshInFlight = forceRefreshTask != nil
-        let clearedStaleForceRefresh = clearStaleForceRefreshIfNeeded(now: now)
-        let clearedStaleStatusRefresh = clearStaleStatusPayloadRefreshIfNeeded(now: now)
-        guard !isForceRefreshPaused(now: now) else { return }
+        let clearedStaleForceRefresh = clearStaleForceRefreshIfNeeded()
+        let clearedStaleStatusRefresh = clearStaleStatusPayloadRefreshIfNeeded()
         let clearedStaleLoading = store.clearStaleLoadingIfNeeded()
         let statusPayloadStale = store.needsStatusPayloadRefresh
         let sinceLast = Date().timeIntervalSince(lastRefreshTime)
@@ -632,9 +583,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         statusPayloadRefreshGeneration &+= 1
         pendingRefreshWork?.cancel()
         pendingRefreshWork = nil
-        cancelLiveQuotaRefreshTasks()
-        forceRefreshBackoff.retryNow(resetStallCount: false)
-        store.clearRefreshPause()
         stopRefreshTimer()
         store.resetRefreshState(clearCache: true)
         lastRefreshTime = .distantPast
@@ -653,8 +601,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.refreshStatusButton()
             _ = await quotas
             guard self.manualRefreshGeneration == generation, !Task.isCancelled else { return }
-            self.forceRefreshBackoff.recordSuccess()
-            self.store.clearRefreshPause()
             self.manualRefreshTask = nil
             if self.refreshTimer == nil {
                 self.startRefreshLoop()

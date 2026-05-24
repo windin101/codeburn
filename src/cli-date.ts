@@ -58,6 +58,49 @@ function parseLocalDate(s: string): Date {
   return date
 }
 
+function endOfLocalDay(date: Date): Date {
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    END_OF_DAY_HOURS,
+    END_OF_DAY_MINUTES,
+    END_OF_DAY_SECONDS,
+    END_OF_DAY_MS,
+  )
+}
+
+export function dayRangeForDate(date: Date): DateRange {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  return { start, end: endOfLocalDay(start) }
+}
+
+export function formatDayRangeLabel(day: string): string {
+  return `Day (${day})`
+}
+
+export function shiftDay(day: string, delta: number): string {
+  const date = parseLocalDate(day)
+  return toDateString(new Date(date.getFullYear(), date.getMonth(), date.getDate() + delta))
+}
+
+export function parseDayFlag(day: string | undefined): { day: string; range: DateRange; label: string } | null {
+  if (day === undefined) return null
+
+  const now = new Date()
+  let date: Date
+  if (day === 'today') {
+    date = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  } else if (day === 'yesterday') {
+    date = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
+  } else {
+    date = parseLocalDate(day)
+  }
+
+  const resolvedDay = toDateString(date)
+  return { day: resolvedDay, range: dayRangeForDate(date), label: formatDayRangeLabel(resolvedDay) }
+}
+
 export function parseDateRangeFlags(from: string | undefined, to: string | undefined): DateRange | null {
   if (from === undefined && to === undefined) return null
 
@@ -72,15 +115,7 @@ export function parseDateRangeFlags(from: string | undefined, to: string | undef
     : new Date(now.getTime() - ALL_TIME_FALLBACK_MS)
 
   const endDate = to !== undefined ? parseLocalDate(to) : new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const end = new Date(
-    endDate.getFullYear(),
-    endDate.getMonth(),
-    endDate.getDate(),
-    END_OF_DAY_HOURS,
-    END_OF_DAY_MINUTES,
-    END_OF_DAY_SECONDS,
-    END_OF_DAY_MS,
-  )
+  const end = endOfLocalDay(endDate)
 
   if (start > end) {
     throw new Error(`--from must not be after --to (got ${from} > ${to})`)
@@ -113,12 +148,11 @@ export function getDateRange(period: string): { range: DateRange; label: string 
   switch (period) {
     case 'today': {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      return { range: { start, end }, label: `Today (${toDateString(start)})` }
+      return { range: dayRangeForDate(start), label: `Today (${toDateString(start)})` }
     }
     case 'yesterday': {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1)
-      const yesterdayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, END_OF_DAY_HOURS, END_OF_DAY_MINUTES, END_OF_DAY_SECONDS, END_OF_DAY_MS)
-      return { range: { start, end: yesterdayEnd }, label: `Yesterday (${toDateString(start)})` }
+      return { range: dayRangeForDate(start), label: `Yesterday (${toDateString(start)})` }
     }
     case 'week': {
       const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7)
@@ -142,6 +176,22 @@ export function getDateRange(period: string): { range: DateRange; label: string 
       )
       process.exit(1)
     }
+  }
+}
+
+export function parseDaysFlag(days: string | undefined): { days: Set<string>; range: DateRange; label: string } | null {
+  if (days === undefined) return null
+  const list = days.split(',').map(s => s.trim()).filter(Boolean)
+  if (list.length === 0) return null
+  const dates = list.map(parseLocalDate)
+  const strings = dates.map(toDateString)
+  const sorted = [...strings].sort()
+  const startDate = parseLocalDate(sorted[0]!)
+  const endDate = parseLocalDate(sorted[sorted.length - 1]!)
+  return {
+    days: new Set(sorted),
+    range: { start: startDate, end: endOfLocalDay(endDate) },
+    label: sorted.length === 1 ? sorted[0]! : `${sorted.length} days (${sorted[0]} .. ${sorted[sorted.length - 1]})`,
   }
 }
 
