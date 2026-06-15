@@ -13,7 +13,9 @@
     <a href="https://github.com/sponsors/iamtoruk"><img src="https://img.shields.io/badge/sponsor-♥-ea4aaa?logo=github" alt="Sponsor" /></a>                                                  
   </p> 
 
-<p align="center"><sub>Maintained with support from Anthropic's Claude for Open Source program.</sub></p>
+<p align="center">
+  <a href="https://claude.com/open-source-max"><img src="https://img.shields.io/badge/Claude_for_Open_Source-Recipient-da7756?style=for-the-badge&labelColor=1a1a1a" alt="Claude for Open Source Recipient" /></a>
+</p>
 
 CodeBurn tracks token usage, cost, and performance across **25 AI agents**. It breaks down spending by task type, model, tool, project, and provider so you can see exactly where your budget goes.
 
