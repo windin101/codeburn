@@ -226,6 +226,18 @@ export async function ensureCacheHydrated(
       }
     }
 
+    // Drop any cached entry dated today or later. The cache only ever stores
+    // complete past days (up to yesterday), so a >= today entry can only come
+    // from the clock moving backward or a stale older cache; left in place it
+    // would be served frozen instead of recomputed live. Yesterday and earlier
+    // stay cached, so this does not re-parse already-cached days.
+    const todayStr = toDateString(now)
+    if (c.days.some(d => d.date >= todayStr)) {
+      const freshDays = c.days.filter(d => d.date < todayStr)
+      const latestFresh = freshDays.length > 0 ? freshDays[freshDays.length - 1].date : null
+      c = { ...c, days: freshDays, lastComputedDate: latestFresh }
+    }
+
     const gapStart = c.lastComputedDate
       ? new Date(
           parseInt(c.lastComputedDate.slice(0, 4)),

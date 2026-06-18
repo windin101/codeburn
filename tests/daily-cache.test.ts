@@ -293,6 +293,34 @@ describe('ensureCacheHydrated', () => {
     expect(parseCalls).toBe(0)
     expect(hydrated).toEqual(saved)
   })
+
+  it('drops a cached today/future entry so it is recomputed live, keeping yesterday cached', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-06-12T12:00:00.000Z'))
+
+    // A "today" entry can only exist via a backward clock change or a stale
+    // cache; it must be purged so today is served live, not from a frozen entry.
+    const saved: DailyCache = {
+      version: DAILY_CACHE_VERSION,
+      savingsConfigHash: '',
+      lastComputedDate: '2026-06-12',
+      days: [emptyDay('2026-06-11', 5, 10), emptyDay('2026-06-12', 9, 20)],
+    }
+    await saveDailyCache(saved)
+
+    let parseCalls = 0
+    const hydrated = await ensureCacheHydrated(
+      async () => {
+        parseCalls += 1
+        return []
+      },
+      () => [],
+    )
+
+    expect(parseCalls).toBe(0)
+    expect(hydrated.days.map(d => d.date)).toEqual(['2026-06-11'])
+    expect(hydrated.lastComputedDate).toBe('2026-06-11')
+  })
 })
 
 describe('withDailyCacheLock', () => {
