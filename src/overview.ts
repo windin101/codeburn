@@ -4,18 +4,17 @@ import { homedir } from 'os'
 
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory } from './types.js'
 import { formatCost as baseCost } from './currency.js'
-import { formatTokens as baseTokens } from './format.js'
 import { getShortModelName } from './models.js'
 import { dateKey } from './day-aggregator.js'
 
-// Display-only helpers. The shared formatters omit thousands separators and stop
-// at M; aggregation uses raw numbers, these only affect rendering.
+// Display-only helpers. The shared formatters omit thousands separators and
+// abbreviate; here we show full, comma-grouped numbers so the tables read like
+// a precise statement. Aggregation uses raw numbers; these only affect render.
 function formatCost(usd: number): string {
   return baseCost(usd).replace(/(\d)(?=(\d{3})+(\.|$))/g, '$1,')
 }
 function formatTokens(n: number): string {
-  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(2)}B`
-  return baseTokens(n)
+  return Math.round(n).toLocaleString()
 }
 function projectName(p: ProjectSummary): string {
   const path = p.projectPath
@@ -43,15 +42,16 @@ function renderTable(c: ChalkInstance, cols: Col[], rows: string[][]): string {
     const fill = ' '.repeat(Math.max(0, w - vlen(s)))
     return right ? fill + s : s + fill
   }
-  const sep = ' ' + c.dim('│') + ' '
+  const gap = '  ' // 2-space cell padding so columns breathe
+  const sep = gap + c.dim('│') + gap
   const edge = c.dim('│')
   const bar = (l: string, mid: string, r: string): string =>
-    c.dim(l + widths.map((w) => '─'.repeat(w + 2)).join(mid) + r)
+    c.dim(l + widths.map((w) => '─'.repeat(w + 4)).join(mid) + r)
   const line = (cells: string[], header = false): string =>
-    edge + ' ' + cells.map((cell, i) => {
+    edge + gap + cells.map((cell, i) => {
       const padded = pad(cell, widths[i]!, cols[i]!.right)
       return header ? c.bold(padded) : padded
-    }).join(sep) + ' ' + edge
+    }).join(sep) + gap + edge
   return [
     bar('┌', '┬', '┐'),
     line(cols.map((col) => col.header), true),
@@ -145,11 +145,28 @@ export function renderOverview(
   out.push(heading('Totals'))
   const kv = (k: string, v: string): string => '  ' + c.dim(k.padEnd(11)) + v
   out.push(kv('Cost', c.bold(formatCost(cost))))
-  out.push(kv('Tokens', formatTokens(totalTokens) + c.dim(`   in ${formatTokens(inTok)} / out ${formatTokens(outTok)} / cache-w ${formatTokens(cacheW)} / cache-r ${formatTokens(cacheR)}`)))
+  out.push(kv('Tokens', formatTokens(totalTokens) + c.dim('   (breakdown below)')))
   out.push(kv('Calls', calls.toLocaleString() + c.dim('   sessions ') + sessions.toLocaleString()))
   out.push(kv('Cache hit', `${cacheHit.toFixed(1)}%`))
   if (savings > 0) out.push(kv('Savings', formatCost(savings) + c.dim(' (local models)')))
   out.push('')
+
+  // Tokens breakdown: input / output / cache in (written) / cache out (read)
+  if (totalTokens > 0) {
+    const share = (n: number): string => `${Math.round((n / totalTokens) * 100)}%`
+    out.push(heading('Tokens'))
+    out.push(renderTable(c,
+      [{ header: 'Type' }, { header: 'Tokens', right: true }, { header: 'Share', right: true }],
+      [
+        ['Input', formatTokens(inTok), share(inTok)],
+        ['Output', formatTokens(outTok), share(outTok)],
+        ['Cache in', formatTokens(cacheW), share(cacheW)],
+        ['Cache out', formatTokens(cacheR), share(cacheR)],
+        ['Total', formatTokens(totalTokens), '100%'],
+      ],
+    ))
+    out.push('')
+  }
 
   // By tool (provider)
   const providerRows = [...byProvider.entries()]

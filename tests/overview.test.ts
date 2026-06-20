@@ -89,7 +89,8 @@ describe('renderOverview', () => {
     })], { label: 'June 2026', color: false })
 
     expect(out).toContain('$1,234.56')
-    expect(out).toMatch(/2\.\d\dB/)
+    // tokens render as full, comma-grouped numbers (not abbreviated)
+    expect(out).toContain('2,002,000,000')
     // no-color mode must not emit ANSI escape codes
     // eslint-disable-next-line no-control-regex
     expect(out).not.toMatch(/\[/)
