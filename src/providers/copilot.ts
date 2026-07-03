@@ -1129,42 +1129,50 @@ function matchJsonObject(raw: string, start: number): { chunk: string; end: numb
 /**
  * Recover the assistant reply text from a `__first__`/Subgraph response blob.
  *
- * Recovers the `text` of each `Markdown` record. A Markdown record is
- * `…"type":"Markdown"…"data":"<json-string>"…` where <json-string> is an
- * escaped JSON document `{"text":"…","annotations":…}`. Rather than fully
- * unescaping the whole blob (which strips the reply's own quotes and makes
- * regex extraction ambiguous — the reply's `"` becomes indistinguishable from a
- * JSON delimiter), we locate each `data` value, read it as a properly-delimited
- * JSON-string literal (honouring escaping), unescape that ONE level, and
- * `JSON.parse` it to read `.text` structurally.
+ * JetBrains Copilot has two turn shapes, both handled here:
  *
- * Scoping to Markdown matters: failed turns store their error under a
- * `type:"Error"` record with a `"message"` field, and `Steps`/status records
- * carry their own strings — none of which are billable assistant output.
- * Steps/error/progress-only blobs therefore yield ''.
+ *  - **Ask mode:** the reply is a `Markdown` record whose `data` is an escaped
+ *    JSON document `{"text":"…","annotations":…}`.
+ *  - **Agent mode** (e.g. PyCharm agent sessions): the reply is the `reply`
+ *    field of an `AgentRound` record `{"roundId":N,"reply":"…","toolCalls":[…]}`.
+ *    In agent mode the `Markdown` records hold the USER's prompts, not the
+ *    reply, so we must NOT read them — the assistant output is the AgentRound
+ *    reply.
+ *
+ * Both are read STRUCTURALLY rather than by fully unescaping the blob (which
+ * would strip the reply's own quotes and make regex extraction ambiguous): we
+ * locate each `data`/`reply` value, read it as a properly-delimited JSON-string
+ * literal (honouring escaping), unescape one level, and `JSON.parse` to reach
+ * the text. We unescape the blob one level at a time and extract at the first
+ * depth that yields text, never accumulating across depths (which would union a
+ * quote-truncated half-unescaped capture with the full one and garble the
+ * reply, inflating the token/cost estimate).
+ *
+ * Steps/error/progress-only blobs (no Markdown text and no AgentRound reply)
+ * yield '' and are billed as $0 upstream.
  */
 function extractResponseText(blob: string): string {
-  // The reply lives inside a Markdown record whose `data` value is itself an
-  // escaped JSON document `{"text":"…"}`. The blob is escaped several levels
-  // deep, so we unescape ONE level at a time and, at each depth, try to read the
-  // `data` payload STRUCTURALLY. Extraction succeeds only at the exact depth
-  // where `data` is a well-formed one-level-escaped JSON string; deeper, the
-  // reply's own quotes go bare and the structure is destroyed. We take the first
-  // depth that yields text — never accumulating across depths (which would union
-  // a quote-truncated half-unescaped capture with the full one and garble the
-  // reply, inflating the token/cost estimate).
   let s = blob
   for (let depth = 0; depth < 8; depth++) {
-    const texts = extractMarkdownTexts(s)
-    if (texts.length > 0) {
-      const decoded = texts.join('\n').trim()
+    // Decide the mode by the PRESENCE of an AgentRound record, not by whether it
+    // yielded a reply. In agent mode the Markdown record holds the USER prompt,
+    // so an agent blob whose reply is empty (a failed turn, or a pure tool-call
+    // round) must NOT fall back to Markdown — that would bill the user's prompt
+    // as the assistant's output. Ask-mode blobs have no AgentRound record and
+    // use Markdown. (Verified across every observed store: the two reply shapes
+    // never coexist in one blob, so this mode split is unambiguous.)
+    const isAgentMode = /"type":"AgentRound"/.test(s)
+    if (isAgentMode || /"type":"Markdown"/.test(s)) {
+      const decoded = isAgentMode ? extractAgentRoundReplies(s) : extractMarkdownTexts(s)
       // The .db is read as latin1 (byte-stable), so multibyte UTF-8 characters
       // are split into separate code units. Re-interpret as UTF-8 so the char
       // count (→ token estimate) reflects real content length, not byte count.
-      return Buffer.from(decoded, 'latin1').toString('utf8')
+      // decoded may be empty (failed/tool-only agent turn) → '' (billed $0).
+      return Buffer.from(decoded.join('\n').trim(), 'latin1').toString('utf8')
     }
-    // Unescape one level in a single left-to-right pass so `\\` and `\"` resolve
-    // together — a two-pass replace would turn `\\"` into `\"` not `\\` + `"`.
+    // Not yet at the depth where record markers appear bare — unescape one level
+    // in a single left-to-right pass so `\\` and `\"` resolve together (a
+    // two-pass replace would turn `\\"` into `\"` not `\\` + `"`).
     const next = s.replace(/\\([\\"])/g, '$1')
     if (next === s) break
     s = next
@@ -1181,16 +1189,39 @@ function extractResponseText(blob: string): string {
  * billable output. Revisions repeat a reply, so identical texts are de-duped.
  */
 function extractMarkdownTexts(s: string): string[] {
+  return extractRecordStrings(s, '"type":"Markdown"', '"data":"', 'text')
+}
+
+/**
+ * Collect the non-empty `reply` of every `AgentRound` record (agent mode). A
+ * single blob can hold several rounds (a multi-turn agent session); each round's
+ * `reply` is the assistant's text for that step (empty on pure tool-call rounds).
+ * Deduped in order.
+ */
+function extractAgentRoundReplies(s: string): string[] {
+  return extractRecordStrings(s, '"type":"AgentRound"', '"data":"', 'reply')
+}
+
+/**
+ * Shared structural reader: for every `<marker>` in `s`, find the following
+ * `<dataKey>` string literal (a one-level-escaped JSON document), parse it, and
+ * collect `doc[field]` when it is a non-empty string. Reading the value as a
+ * delimited literal — not a greedy regex — means the payload's own quotes never
+ * truncate it. Returns [] when `s` is not yet at the depth where the marker
+ * appears bare with a parseable payload. De-dupes in order (the store keeps
+ * byte-copies/revisions of each reply).
+ */
+function extractRecordStrings(s: string, marker: string, dataKey: string, field: string): string[] {
   const texts: string[] = []
   const seen = new Set<string>()
-  const marker = /"type":"Markdown"/g
+  const re = new RegExp(marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')
   let m: RegExpExecArray | null
-  while ((m = marker.exec(s))) {
-    const dataKey = s.indexOf('"data":"', m.index)
-    if (dataKey === -1 || dataKey - m.index > 200) continue
-    // The data value runs from after `"data":"` to the first UNescaped quote (an
-    // odd run of preceding backslashes escapes it).
-    const start = dataKey + '"data":"'.length
+  while ((m = re.exec(s))) {
+    const dk = s.indexOf(dataKey, m.index)
+    if (dk === -1 || dk - m.index > 200) continue
+    // The value runs from after `<dataKey>` to the first UNescaped quote (an odd
+    // run of preceding backslashes escapes it).
+    const start = dk + dataKey.length
     let i = start
     for (; i < s.length; i++) {
       if (s[i] !== '"') continue
@@ -1201,15 +1232,15 @@ function extractMarkdownTexts(s: string): string[] {
     const literal = s.slice(start, i)
     try {
       // Wrapping in quotes + parsing unescapes exactly one level → the inner
-      // JSON document as a string; parsing THAT reaches { text, … }.
-      const doc = JSON.parse(JSON.parse('"' + literal + '"') as string) as { text?: unknown }
-      const text = typeof doc.text === 'string' ? doc.text : ''
+      // JSON document as a string; parsing THAT reaches { <field>, … }.
+      const doc = JSON.parse(JSON.parse('"' + literal + '"') as string) as Record<string, unknown>
+      const text = typeof doc[field] === 'string' ? (doc[field] as string) : ''
       if (text && !seen.has(text)) {
         seen.add(text)
         texts.push(text)
       }
     } catch {
-      // Not the right depth (or not a Markdown-text record) — skip.
+      // Not the right depth (or not a matching record) — skip.
     }
   }
   return texts
@@ -1230,7 +1261,7 @@ function extractJetBrainsDbTurns(raw: string): JBDbTurn[] {
   const convById = new Map(conversations.map((c) => [c.id, c]))
 
   const turns: JBDbTurn[] = []
-  const seenReplies = new Set<string>() // keyed by `${conversationId}\0${reply}`
+  const seenReplies = new Set<string>() // keyed by `${conversationId}::${reply}`
   const re = /\{"__first__":\{"type":"Subgraph"/g
   let m: RegExpExecArray | null
   while ((m = re.exec(raw))) {

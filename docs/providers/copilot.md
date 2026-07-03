@@ -68,10 +68,29 @@ XDG rules: `$XDG_CONFIG_HOME/github-copilot` when set, else
 `H:2,block:9,…format:3`) of Java-serialized Nitrite documents (`NtAgentSession`,
 `NtAgentTurn`). It is read as `latin1` (byte-offset-stable, lossless) and scanned
 — no Java deserializer, no new deps, and it is **not** SQLite so `node:sqlite` is
-not used. Each assistant reply is a `{"__first__":{"type":"Subgraph",…}}` blob;
-the reply text is recovered by unescaping to a fixed point and then collecting
-`Markdown` `"text"` fields once (`extractResponseText`). User prompts are the
-simpler `{"<uuid>":{"type":"Value",…}}` value-maps.
+not used. Each assistant reply is a `{"__first__":{"type":"Subgraph",…}}` blob.
+`extractResponseText` recovers the reply by unescaping one level at a time and,
+at the first depth where the record markers appear bare, reading the reply
+**structurally** (the payload is parsed as a delimited JSON-string literal, so a
+reply containing its own quotes is never truncated).
+
+**Two turn shapes, both handled** (a blob is one or the other — verified across
+every observed store that they never coexist):
+
+- **Ask mode** — the reply is a `Markdown` record's `text`.
+- **Agent / plan mode** (agent sessions, `/plan …`, e.g. in PyCharm) — the reply
+  is the `reply` field of an `AgentRound` record; here the `Markdown` records
+  hold the *user's* prompt instead. The mode is decided by the **presence** of an
+  `AgentRound` record, and only its `reply` is read — so an agent turn with an
+  empty reply (a failed turn or a pure tool-call round) is billed **$0** rather
+  than falling back to the prompt. A multi-round blob contributes every non-empty
+  round's reply.
+
+Sidecar records that plan/agent mode also writes — `Thinking` (chain-of-thought),
+`PendingChanges` (proposed code diff, stored under `content` not `data`),
+`AskQuestion`, `Notification`, `SubTurn`, and file-read `text` results — are
+**not** billable assistant output and are deliberately skipped. User prompts are
+the simpler `{"<uuid>":{"type":"Value",…}}` value-maps.
 
 (Store dirs may also contain a legacy `00000000000.xd` Xodus log from older
 plugin versions. On every installation observed it is either empty or shadowed
@@ -84,7 +103,9 @@ surfaces, add a reader with a captured fixture.)
   call is marked `costIsEstimated: true`.
 - **Errored turns.** A failed generation ("Sorry, an error occurred …") is stored
   as an assistant blob with an error status and no reply text; it is detected and
-  billed **$0** (not conflated with an empty success).
+  billed **$0** (not conflated with an empty success). In agent mode a failed turn
+  has an empty `AgentRound` reply — the parser does not fall back to the prompt
+  `Markdown`, so the user's words are never billed as the assistant's output.
 - **Per-turn model.** The model varies per turn within one `.db`. It is recovered
   from inside the assistant blob when present, else a store-wide default, else a
   generic Copilot bucket. Dotted Claude names are normalised to canonical ids

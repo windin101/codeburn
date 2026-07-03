@@ -1211,6 +1211,34 @@ describe('copilot provider - JetBrains parsing', () => {
     return JSON.stringify(outer)
   }
 
+  // An AGENT-MODE assistant blob: the reply lives in an AgentRound record, and
+  // (as in real agent sessions) the Markdown record holds the USER's prompt,
+  // which must NOT be counted as the reply. `rounds` is a list of AgentRound
+  // replies (a single blob can carry several); a pure tool-call round has ''.
+  function jbAgentBlob(rounds: string[], opts: { model?: string; userPrompt?: string; errored?: boolean } = {}) {
+    const valueMap: Record<string, unknown> = {}
+    let n = 0
+    // The user prompt as a Markdown record — a decoy the reply extractor must
+    // skip in agent mode (real stores put the prompt here, not the answer).
+    if (opts.userPrompt !== undefined) {
+      const md = { type: 'Markdown', data: JSON.stringify({ text: opts.userPrompt, annotations: [] }) }
+      valueMap[`u0000000-0000-0000-0000-00000000000${n++}`] = { type: 'Value', value: JSON.stringify(md) }
+    }
+    for (const reply of rounds) {
+      const ar = { type: 'AgentRound', data: JSON.stringify({ roundId: n, reply, toolCalls: [] }) }
+      valueMap[`a0000000-0000-0000-0000-00000000000${n++}`] = { type: 'Value', value: JSON.stringify(ar) }
+    }
+    if (opts.model) valueMap['__model__'] = { type: 'Value', value: `{"model":"${opts.model}"}` }
+    const outer: Record<string, unknown> = { __first__: { type: 'Subgraph', value: JSON.stringify(valueMap) } }
+    if (opts.errored) {
+      outer['__err__'] = {
+        type: 'Value',
+        value: JSON.stringify({ type: 'Error', message: 'Sorry, an error occurred while generating a response' }),
+      }
+    }
+    return JSON.stringify(outer)
+  }
+
   // A conversation title record in the real framing: `$<GUID>…name…value<TITLE>t\x00\x06source`.
   function jbConversationRecord(guid: string, title: string) {
     return `$${guid}t\x00\x04namesq\x00\x01?@\x00\x00w\x00\x00t\x00value t\x00${title}t\x00\x06sourcet\x00copilotx`
@@ -1300,6 +1328,64 @@ describe('copilot provider - JetBrains parsing', () => {
     const calls = await collectCalls(jbDbSource(dbPath, 'conv-utf8'))
     expect(calls).toHaveLength(1)
     expect(calls[0]!.outputTokens).toBe(Math.ceil(reply.length / 4))
+  })
+
+  it('extracts agent-mode replies from AgentRound (not the user prompt Markdown)', async () => {
+    // Agent-mode sessions (e.g. PyCharm) store the reply in an AgentRound record;
+    // the Markdown record holds the USER prompt. The reply extractor must read
+    // the AgentRound reply and ignore the prompt — otherwise the turn bills $0
+    // (reply never found) or bills the user's words as output.
+    const reply = "Here's a quick summary of this repo: it does X, Y, and Z."
+    const content = jbDbContent([
+      jbAgentBlob([reply], { model: 'claude-opus-4.5', userPrompt: 'summarise this repo' }),
+    ])
+    const dbPath = await createJetBrainsDb(tmpDir, 'py', 'chat-agent-sessions', 'conv-agent', content)
+
+    const calls = await collectCalls(jbDbSource(dbPath, 'conv-agent'))
+    expect(calls).toHaveLength(1)
+    // Priced from the AgentRound reply, not the (shorter) user prompt.
+    expect(calls[0]!.outputTokens).toBe(Math.ceil(reply.length / 4))
+    expect(calls[0]!.costUSD).toBeGreaterThan(0)
+    expect(calls[0]!.model).toBe('claude-opus-4-5')
+  })
+
+  it('skips pure tool-call agent rounds (empty reply → no billable output)', async () => {
+    // A round that only issued tool calls has reply:'' — it contributes nothing,
+    // exactly like a Steps-only ask-mode blob.
+    const content = jbDbContent([jbAgentBlob([''], { model: 'claude-opus-4.5' })])
+    const dbPath = await createJetBrainsDb(tmpDir, 'py', 'chat-agent-sessions', 'conv-toolonly', content)
+    const calls = await collectCalls(jbDbSource(dbPath, 'conv-toolonly'))
+    expect(calls).toHaveLength(0)
+  })
+
+  it('a failed agent turn bills $0 and never counts the user prompt as the reply', async () => {
+    // Failed agent turn: empty AgentRound reply + an error marker + a user-prompt
+    // Markdown record. The parser must NOT fall back to the Markdown (that would
+    // bill the user's words); an agent blob is agent mode regardless of whether
+    // its reply is empty, so this is an errored turn → $0.
+    const content = jbDbContent([
+      jbAgentBlob([''], { model: 'claude-opus-4.5', userPrompt: 'do the thing', errored: true }),
+    ])
+    const dbPath = await createJetBrainsDb(tmpDir, 'py', 'chat-agent-sessions', 'conv-agenterr', content)
+    const calls = await collectCalls(jbDbSource(dbPath, 'conv-agenterr'))
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.outputTokens).toBe(0)
+    expect(calls[0]!.costUSD).toBe(0)
+  })
+
+  it('collects multiple AgentRound replies within one blob', async () => {
+    // A multi-round agent turn: the first round explores (tool call, empty
+    // reply), the second answers. Both non-empty replies are joined.
+    const content = jbDbContent([
+      jbAgentBlob(['Let me explore the project.', '', 'Done — here is what it does.'], {
+        model: 'claude-opus-4.5',
+      }),
+    ])
+    const dbPath = await createJetBrainsDb(tmpDir, 'py', 'chat-agent-sessions', 'conv-multiround', content)
+    const calls = await collectCalls(jbDbSource(dbPath, 'conv-multiround'))
+    expect(calls).toHaveLength(1)
+    const joined = 'Let me explore the project.\nDone — here is what it does.'
+    expect(calls[0]!.outputTokens).toBe(Math.ceil(joined.length / 4))
   })
 
   it('treats errored turns as $0 (failed generation, no billable output)', async () => {
