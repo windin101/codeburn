@@ -31,12 +31,14 @@ const REPORT_MIN_AGE_DAYS = 3
 const MIN_POST_WINDOW_SESSIONS = 20
 const VOLUME_SHIFT_FACTOR = 2
 
-// Encode the epic's honest-accounting rules where they are seen: each kind
-// measures only its own metric, guard is correlation, and realized figures are
-// rounded down with the estimate kept visible.
+// Encode the epic's honest-accounting rules where they are seen: estimates are
+// window-scaled so both columns share a scale, each kind measures only its own
+// metric, guard is correlation, and realized figures are rounded down.
 const HONEST_FOOTER =
-  'Each fix measures only its own metric; effects are never attributed across signals. '
-  + 'Guard rows are correlation, not attribution. Realized numbers are rounded down; the estimate stays visible.'
+  'Estimates are scaled to the measured window for comparability; the at-apply estimate is kept in --json. '
+  + 'MCP and archive realized figures are derived from per-session baselines times session counts, not independently measured. '
+  + 'Each fix measures only its own metric; effects are never attributed across signals. '
+  + 'Guard rows are correlation, not attribution. Realized numbers are rounded down.'
 
 const MCP_KINDS = new Set<ActionKind>(['mcp-remove', 'mcp-project-scope'])
 const ARCHIVE_DEF_TOKENS: Partial<Record<ActionKind, number>> = {
@@ -53,7 +55,12 @@ export type ActReportRow = {
   date: string
   kind: ActionKind
   description: string
-  estimatedTokens: number
+  // The detector's estimate persisted at apply time, unmodified.
+  estimatedAtApply: number
+  // The estimate re-expressed over the same post-apply window as realized so
+  // the two table columns are comparable; falls back to estimatedAtApply for
+  // kinds with no window scaling.
+  estimatedForWindow: number
   realizedTokens: number
   status: RealizedStatus
   confidence: 'low' | 'normal'
@@ -77,6 +84,9 @@ export type ActReport = {
   measuredCount: number
   activeCount: number
   observedDays: number
+  // Journal lines that parsed as JSON but are not usable records (missing or
+  // unparseable `at`, missing status); skipped and surfaced, never a throw.
+  malformedRecords: number
   // findingId -> earliest apply date of an active applied action; drives the
   // optimize "(previously applied ..., re-flagged)" title suffix.
   appliedByFinding: Record<string, string>
@@ -174,18 +184,25 @@ function mcpRow(
   const servers = Object.keys(baseline.metrics)
   const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
   if (servers.length === 0 || perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
+  if (sessions.length === 0) return { ...base, note: 'not measurable: no sessions in the window yet' }
+  // Window-scaled estimate: what the fix would save if every window session
+  // benefited. Realized differs from it only through still-loading sessions
+  // (and the revert check), so the pair is derived from session counts, not
+  // independently measured.
+  const estimatedForWindow = Math.floor(perSessionTokens * sessions.length)
   const stillLoading = sessions.filter(s => sessionLoadsAny(s, servers)).length
   const confidence = confidenceFor(sessions.length, baseline, afterStart, now)
   if (rec.kind === 'mcp-remove' && stillLoading > 0) {
     return {
       ...base,
+      estimatedForWindow,
       status: 'reverted',
       confidence,
       note: `reverted by user: ${servers.join(', ')} loaded again in ${stillLoading} post-apply session${stillLoading === 1 ? '' : 's'}`,
     }
   }
   const savedSessions = Math.max(0, sessions.length - stillLoading)
-  return { ...base, status: 'measured', realizedTokens: Math.floor(perSessionTokens * savedSessions), confidence }
+  return { ...base, estimatedForWindow, status: 'measured', realizedTokens: Math.floor(perSessionTokens * savedSessions), confidence }
 }
 
 function archiveRow(
@@ -194,12 +211,16 @@ function archiveRow(
 ): ActReportRow {
   const perSessionTokens = Object.values(baseline.metrics).reduce((a, b) => a + b, 0)
   if (perSessionTokens === 0) return { ...base, note: 'not measurable: empty baseline' }
+  if (sessions.length === 0) return { ...base, note: 'not measurable: no sessions in the window yet' }
+  const estimatedForWindow = Math.floor(perSessionTokens * sessions.length)
   const confidence = confidenceFor(sessions.length, baseline, afterStart, now)
   const restored = rec.changes.some(c => c.op === 'move' && existsSync(c.path))
   if (restored) {
-    return { ...base, status: 'reverted', confidence, note: 'reverted by user: an archived item was moved back into place' }
+    return { ...base, estimatedForWindow, status: 'reverted', confidence, note: 'reverted by user: an archived item was moved back into place' }
   }
-  return { ...base, status: 'measured', realizedTokens: Math.floor(perSessionTokens * sessions.length), confidence }
+  // Estimate and realized are the same product by construction; the measured
+  // signal here is the session count and the revert check, not the multiply.
+  return { ...base, estimatedForWindow, status: 'measured', realizedTokens: Math.floor(perSessionTokens * sessions.length), confidence }
 }
 
 function readEditRow(
@@ -219,8 +240,11 @@ function readEditRow(
   const deficitThen = Math.max(HEALTHY_READ_EDIT_RATIO - ratioThen, 0)
   const deficitNow = Math.max(HEALTHY_READ_EDIT_RATIO - ratioNow, 0)
   const realized = Math.floor(Math.max(0, deficitThen - deficitNow) * editsNow * AVG_TOKENS_PER_READ)
+  // Same edits denominator as realized, so realized never exceeds it.
+  const estimatedForWindow = Math.floor(deficitThen * editsNow * AVG_TOKENS_PER_READ)
   return {
     ...base,
+    estimatedForWindow,
     status: 'measured',
     realizedTokens: realized,
     confidence: confidenceFor(sessions.length, baseline, afterStart, now),
@@ -261,13 +285,15 @@ async function guardRow(
 }
 
 async function computeRow(rec: ActionRecord, sessions: SessionSummary[], afterStart: Date, now: Date, opts: ActReportOptions): Promise<ActReportRow> {
+  const estimatedAtApply = rec.baseline?.estimatedTokens ?? 0
   const base: ActReportRow = {
     id: rec.id,
     appliedAt: rec.at,
     date: rec.at.slice(0, 10),
     kind: rec.kind,
     description: rec.description,
-    estimatedTokens: rec.baseline?.estimatedTokens ?? 0,
+    estimatedAtApply,
+    estimatedForWindow: estimatedAtApply,
     realizedTokens: 0,
     status: 'not-measurable',
     confidence: 'normal',
@@ -288,9 +314,18 @@ async function computeRow(rec: ActionRecord, sessions: SessionSummary[], afterSt
 // Report
 // ---------------------------------------------------------------------------
 
+// A journal line can be any JSON; only records with a parseable `at` date and
+// a string status can be dated and filtered. Anything else is skipped and
+// counted, so a corrupt journal can never crash `act report` or optimize.
+function isSaneRecord(r: ActionRecord): boolean {
+  return typeof r.at === 'string' && typeof r.status === 'string' && !Number.isNaN(new Date(r.at).getTime())
+}
+
 export async function computeActReport(opts: ActReportOptions = {}): Promise<ActReport> {
   const now = opts.now ?? new Date()
-  const records = await readRecords(opts.actionsDir ?? defaultActionsDir())
+  const rawRecords = await readRecords(opts.actionsDir ?? defaultActionsDir())
+  const records = rawRecords.filter(isSaneRecord)
+  const malformedRecords = rawRecords.length - records.length
   const active = records.filter(r => r.status === 'applied')
 
   const appliedByFinding: Record<string, string> = {}
@@ -311,6 +346,7 @@ export async function computeActReport(opts: ActReportOptions = {}): Promise<Act
     measuredCount: 0,
     activeCount: active.length,
     observedDays: 0,
+    malformedRecords,
     appliedByFinding,
   }
 
@@ -345,15 +381,24 @@ export async function computeActReport(opts: ActReportOptions = {}): Promise<Act
     measuredCount: measuredRows.length,
     activeCount: active.length,
     observedDays,
+    malformedRecords,
     appliedByFinding,
   }
 }
 
 export function buildOptimizeAppliedHeader(report: ActReport): string | null {
-  if (report.measuredCount === 0) return null
-  const cost = report.costRate > 0 ? ` (~${formatCost(report.totalRealizedCostUSD)})` : ''
-  const days = report.observedDays
-  return `Applied fixes: ${report.activeCount} active, realized ~${formatTokens(report.totalRealizedTokens)} tokens${cost} over ${days} day${days === 1 ? '' : 's'}. Details: codeburn act report`
+  // Under-claim: only normal-confidence measured rows feed the optimize line.
+  // Low-confidence rows stay visible in `act report` but never in the header.
+  const confident = report.rows.filter(r => r.status === 'measured' && isTokenKind(r.kind) && r.confidence === 'normal')
+  if (confident.length === 0) return null
+  const tokens = confident.reduce((s, r) => s + r.realizedTokens, 0)
+  const generated = new Date(report.generatedAt)
+  const days = Math.min(
+    report.windowCapDays,
+    confident.reduce((mx, r) => Math.max(mx, Math.ceil(ageDays(r.appliedAt, generated))), 0),
+  )
+  const cost = report.costRate > 0 ? ` (~${formatCost(tokens * report.costRate)})` : ''
+  return `Applied fixes: ${report.activeCount} active, realized ~${formatTokens(tokens)} tokens${cost} over ${days} day${days === 1 ? '' : 's'}. Details: codeburn act report`
 }
 
 function realizedCell(r: ActReportRow): string {
@@ -361,6 +406,10 @@ function realizedCell(r: ActReportRow): string {
   if (r.status === 'not-measurable') return 'not measurable'
   if (r.correlation) return `abandoned ${r.correlation.abandonedPctThen}% -> ${r.correlation.abandonedPctNow}% (corr.)`
   return formatTokens(r.realizedTokens)
+}
+
+function malformedNote(n: number): string {
+  return `${n} malformed record${n === 1 ? '' : 's'} skipped`
 }
 
 export function renderActReport(report: ActReport): string {
@@ -371,6 +420,7 @@ export function renderActReport(report: ActReport): string {
     } else {
       lines.push('  Apply fixes with codeburn optimize --apply, then check back after a few days.')
     }
+    if (report.malformedRecords > 0) lines.push(`  ${malformedNote(report.malformedRecords)}.`)
     lines.push('')
     return lines.join('\n')
   }
@@ -378,7 +428,7 @@ export function renderActReport(report: ActReport): string {
   const rows = report.rows.map(r => [
     r.date,
     r.description,
-    r.estimatedTokens > 0 ? formatTokens(r.estimatedTokens) : '-',
+    r.estimatedForWindow > 0 ? formatTokens(r.estimatedForWindow) : '-',
     realizedCell(r),
     r.status === 'measured' && isTokenKind(r.kind) ? r.confidence : '-',
   ])
@@ -399,6 +449,7 @@ export function renderActReport(report: ActReport): string {
       details.push(`     avg session cost ${formatCost(r.correlation.avgSessionCostThenUSD)} -> ${formatCost(r.correlation.avgSessionCostNowUSD)}`)
     }
   }
+  if (report.malformedRecords > 0) details.push(`  ${malformedNote(report.malformedRecords)}`)
 
   return ['', table, ...(details.length > 0 ? ['', ...details] : []), '', '  ' + HONEST_FOOTER, ''].join('\n')
 }
@@ -407,6 +458,7 @@ export function buildActReportJson(report: ActReport): unknown {
   return {
     generatedAt: report.generatedAt,
     windowCapDays: report.windowCapDays,
+    malformedRecords: report.malformedRecords,
     actions: report.rows.map(r => {
       const tokenMeasured = r.status === 'measured' && isTokenKind(r.kind)
       return {
@@ -414,7 +466,8 @@ export function buildActReportJson(report: ActReport): unknown {
         date: r.date,
         kind: r.kind,
         description: r.description,
-        estimatedTokens: r.estimatedTokens,
+        estimatedAtApply: r.estimatedAtApply,
+        estimatedForWindow: r.estimatedForWindow,
         realizedTokens: tokenMeasured ? r.realizedTokens : null,
         status: r.status,
         confidence: tokenMeasured ? r.confidence : null,

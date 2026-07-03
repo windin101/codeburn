@@ -1351,16 +1351,20 @@ program
     }
     assertFormat(format, ['text', 'json'], 'optimize')
     if (format === 'text') {
-      // Surface realized savings from applied actions. computeActReport returns
-      // fast without scanning when the journal has no eligible applied actions,
-      // so users who never opted in see identical output.
-      const { computeActReport, buildOptimizeAppliedHeader } = await import('./act/report.js')
-      const applied = await computeActReport()
-      await runOptimize(projects, label, range, {
-        format,
-        appliedHeader: buildOptimizeAppliedHeader(applied) ?? undefined,
-        previouslyApplied: applied.appliedByFinding,
-      })
+      // Surface realized savings from applied actions. Best effort: optimize
+      // must never fail because of journal contents, so any error just drops
+      // the header. computeActReport returns fast without scanning when the
+      // journal has no eligible applied actions, so users who never opted in
+      // see identical output.
+      let appliedHeader: string | undefined
+      let previouslyApplied: Record<string, string> | undefined
+      try {
+        const { computeActReport, buildOptimizeAppliedHeader } = await import('./act/report.js')
+        const applied = await computeActReport()
+        appliedHeader = buildOptimizeAppliedHeader(applied) ?? undefined
+        previouslyApplied = applied.appliedByFinding
+      } catch { /* the header is optional; never block the findings */ }
+      await runOptimize(projects, label, range, { format, appliedHeader, previouslyApplied })
     } else {
       await runOptimize(projects, label, range, { format })
     }
