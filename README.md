@@ -410,6 +410,7 @@ codeburn currency GBP          # set to British Pounds
 codeburn currency AUD          # set to Australian Dollars
 codeburn currency JPY          # set to Japanese Yen
 codeburn currency CNY          # set to Chinese Yuan
+codeburn currency RON          # set to Romanian Leu
 codeburn currency              # show current setting
 codeburn currency --reset      # back to USD
 ```
