@@ -23,6 +23,21 @@ ColumnLayout {
         return total / root.historyData.length;
     }
 
+    function getTotalTokens() {
+        if (!root.historyData) return 0;
+        var total = 0;
+        for (var i = 0; i < root.historyData.length; i++) {
+            total += (root.historyData[i].inputTokens || 0) + (root.historyData[i].outputTokens || 0);
+        }
+        return total;
+    }
+
+    function formatTokens(t) {
+        if (t >= 1e6) return (t / 1e6).toFixed(1) + "M tokens";
+        if (t >= 1e3) return (t / 1e3).toFixed(1) + "K tokens";
+        return t.toLocaleString() + " tokens";
+    }
+
     SegmentedControl {
         id: insightSwitcher
         model: ["Trend", "Calendar", "Stats", "Optimize"]
@@ -39,6 +54,19 @@ ColumnLayout {
             id: trendView
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            Text {
+                visible: root.historyData.length > 0
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.leftMargin: 2
+                anchors.topMargin: 2
+                text: root.formatTokens(root.getTotalTokens())
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize - 1
+                color: Kirigami.Theme.textColor
+                opacity: 0.5
+                z: 10
+            }
 
             Text {
                 visible: root.historyData.length === 0
