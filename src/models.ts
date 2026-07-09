@@ -679,6 +679,47 @@ function looksLikeLocalModel(name: string): boolean {
   return false
 }
 
+export interface UnpricedModelUsage {
+  model: string
+  calls: number
+  tokens: number
+}
+
+// Render-time unpriced detection (#638): flag aggregated model rows that carry
+// usage but $0 cost AND whose pricing lookup fails against the CURRENT tables.
+// Cost is computed at parse time and cached, so a parse-time registry would
+// miss cached sessions; a render-time check covers both and heals itself the
+// moment pricing data, an alias, or a price override arrives.
+//
+// Both conditions are required because aggregation keys rows by DISPLAY name
+// (parser.ts keys modelBreakdown via getShortModelName), which the pricing
+// lookup does not resolve: a priced model like "Opus 4.8" fails the lookup but
+// has real cost, so cost > 0 rows are never flagged. For $0 rows the display
+// name is reverse-resolved before flagging, so sessions cached before their
+// model's pricing landed don't produce a misleading "add an alias" hint.
+// Conservative by design: a display key merging priced and unpriced raw ids
+// carries cost > 0 and is not flagged. Local-looking models and models with a
+// local-savings mapping are excluded because $0 is their correct cost.
+export function findUnpricedModels(
+  rows: Iterable<{ model: string; calls: number; cost: number; tokens?: number }>,
+): UnpricedModelUsage[] {
+  const out: UnpricedModelUsage[] = []
+  for (const row of rows) {
+    const { model } = row
+    const tokens = row.tokens ?? 0
+    if (!model || model === '<synthetic>') continue
+    if (row.calls <= 0 && tokens <= 0) continue
+    if (row.cost > 0) continue
+    if (looksLikeLocalModel(model)) continue
+    if (getLocalSavingsBaseline(model)) continue
+    if (getModelCosts(model)) continue
+    const rawId = reverseDisplayName(model)
+    if (rawId && (getModelCosts(rawId) || getLocalSavingsBaseline(rawId) || looksLikeLocalModel(rawId))) continue
+    out.push({ model, calls: row.calls, tokens })
+  }
+  return out.sort((a, b) => (b.tokens - a.tokens) || (b.calls - a.calls) || a.model.localeCompare(b.model))
+}
+
 function shouldWarnAboutUnknownModel(name: string): boolean {
   if (!name || name === '<synthetic>') return false
   if (warnedUnknownModels.has(name)) return false
@@ -832,6 +873,30 @@ const SHORT_NAMES: Record<string, string> = {
 // behind the wrong display name and pricing tier.
 const SORTED_SHORT_NAMES: [string, string][] = Object.entries(SHORT_NAMES)
   .sort((a, b) => b[0].length - a[0].length)
+
+// Display name -> raw model id, for aggregation surfaces keyed by
+// getShortModelName output (see findUnpricedModels). First table entry wins;
+// derived Claude names ("Opus 4.8") are handled by pattern below.
+let reverseDisplayNamesCache: Map<string, string> | null = null
+function reverseDisplayName(display: string): string | null {
+  if (!reverseDisplayNamesCache) {
+    reverseDisplayNamesCache = new Map()
+    for (const [id, name] of [...Object.entries(SHORT_NAMES), ...Object.entries(autoModelNames)]) {
+      if (!reverseDisplayNamesCache.has(name)) reverseDisplayNamesCache.set(name, id)
+    }
+  }
+  const direct = reverseDisplayNamesCache.get(display)
+  if (direct) return direct
+  // Inverse of deriveClaudeShortName: "Opus 4.8" -> claude-opus-4-8.
+  const claude = /^(Opus|Sonnet|Haiku) (\d+)(?:\.(\d+))?$/.exec(display)
+  if (claude) {
+    const family = claude[1]!.toLowerCase()
+    return claude[3] !== undefined
+      ? `claude-${family}-${claude[2]}-${claude[3]}`
+      : `claude-${family}-${claude[2]}`
+  }
+  return null
+}
 
 // Anthropic's id scheme is `claude-<family>-<major>[-<minor>]`, so every new
 // version is derivable — no hand-maintained entry per release. (Legacy 3.x ids

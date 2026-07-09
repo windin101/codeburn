@@ -4,6 +4,7 @@ import { join } from 'path'
 import { describe, it, expect, beforeAll, afterEach } from 'vitest'
 
 import {
+  findUnpricedModels,
   getModelCosts,
   getShortModelName,
   calculateCost,
@@ -673,5 +674,75 @@ describe('observed provider model aliases', () => {
   it('does not map dated Qwen3 Max to a reseller price without provider context', () => {
     expect(getModelCosts('qwen3-max-2026-01-23')).toBeNull()
     expect(calculateCost('qwen3-max-2026-01-23', 1_000_000, 1_000_000, 0, 0, 0)).toBe(0)
+  })
+})
+
+describe('findUnpricedModels', () => {
+  it('flags an unknown paid-looking model with $0 cost and skips priced ones', () => {
+    const rows = [
+      { model: 'claude-opus-4-6', calls: 10, cost: 2.5, tokens: 5000 },
+      { model: 'zz-mystery-paid-model-999', calls: 3, cost: 0, tokens: 1200 },
+    ]
+    const unpriced = findUnpricedModels(rows)
+    expect(unpriced).toEqual([{ model: 'zz-mystery-paid-model-999', calls: 3, tokens: 1200 }])
+  })
+
+  it('never flags a row that carries real cost, even when the lookup misses', () => {
+    // Aggregation keys rows by display name; the lookup misses but the row was
+    // priced at parse time, so it must not be reported as unpriced.
+    const unpriced = findUnpricedModels([
+      { model: 'Opus 4.8', calls: 100, cost: 42.5, tokens: 1_000_000 },
+      { model: 'zz-unknown-but-priced-elsewhere', calls: 5, cost: 0.01, tokens: 500 },
+    ])
+    expect(unpriced).toEqual([])
+  })
+
+  it('reverse-resolves display names before flagging $0 rows', () => {
+    // Sessions cached before a model's pricing landed carry $0 cost under a
+    // display-name key. The raw id prices today, so no "add an alias" hint.
+    const unpriced = findUnpricedModels([
+      { model: 'Fable 5', calls: 94, cost: 0, tokens: 12_000_000 },
+      { model: 'Opus 4.8', calls: 33, cost: 0, tokens: 1_600_000 },
+      { model: 'GPT-4o', calls: 7, cost: 0, tokens: 900 },
+    ])
+    expect(unpriced).toEqual([])
+  })
+
+  it('skips synthetic, empty, local-looking, and zero-usage rows', () => {
+    const unpriced = findUnpricedModels([
+      { model: '<synthetic>', calls: 5, cost: 0, tokens: 100 },
+      { model: '', calls: 5, cost: 0, tokens: 100 },
+      { model: 'llama3.1:8b', calls: 5, cost: 0, tokens: 100 },
+      { model: 'zz-quantized-model-bf16', calls: 5, cost: 0, tokens: 100 },
+      { model: 'zz-no-usage-model', calls: 0, cost: 0, tokens: 0 },
+    ])
+    expect(unpriced).toEqual([])
+  })
+
+  it('heals when the user configures an alias or a price override', () => {
+    const model = 'zz-proxy-renamed-model-x1'
+    expect(findUnpricedModels([{ model, calls: 1, cost: 0, tokens: 10 }])).toHaveLength(1)
+
+    setModelAliases({ [model]: 'claude-opus-4-6' })
+    expect(findUnpricedModels([{ model, calls: 1, cost: 0, tokens: 10 }])).toEqual([])
+    setModelAliases({})
+
+    setPriceOverrides({ [model]: { input: 1, output: 2 } })
+    expect(findUnpricedModels([{ model, calls: 1, cost: 0, tokens: 10 }])).toEqual([])
+  })
+
+  it('skips models mapped via model-savings (intentionally $0)', () => {
+    const model = 'zz-my-local-runner'
+    expect(findUnpricedModels([{ model, calls: 1, cost: 0, tokens: 10 }])).toHaveLength(1)
+    setLocalModelSavings({ [model]: 'gpt-4o' })
+    expect(findUnpricedModels([{ model, calls: 1, cost: 0, tokens: 10 }])).toEqual([])
+  })
+
+  it('sorts by tokens, then calls', () => {
+    const unpriced = findUnpricedModels([
+      { model: 'zz-small', calls: 9, cost: 0, tokens: 10 },
+      { model: 'zz-big', calls: 1, cost: 0, tokens: 9999 },
+    ])
+    expect(unpriced.map(u => u.model)).toEqual(['zz-big', 'zz-small'])
   })
 })
