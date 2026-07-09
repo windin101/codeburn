@@ -604,7 +604,7 @@ PlasmoidItem {
                 Button {
                     text: "⚙️"
                     onClicked: {
-                        plasmoid.action("configure").trigger();
+                        plasmoid.internalAction("configure").trigger();
                     }
                 }
             }
