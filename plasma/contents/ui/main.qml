@@ -580,7 +580,7 @@ PlasmoidItem {
                     onClicked: {
                         var bin = plasmoid.configuration.codeburnBin || "codeburn";
                         launcher.connectSource("konsole -e " + bin + " &");
-                        root.checkCacheAndFetch(true, false);
+                        root.checkCacheAndFetch(true, true);
                     }
                 }
 
@@ -606,7 +606,7 @@ PlasmoidItem {
                     text: "⚙️"
                     onClicked: {
                         plasmoid.internalAction("configure").trigger();
-                        root.checkCacheAndFetch(true, false);
+                        root.checkCacheAndFetch(true, true);
                     }
                 }
             }
