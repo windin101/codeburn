@@ -74,7 +74,7 @@ ColumnLayout {
                 Layout.leftMargin: 4
             }
             Repeater {
-                model: root.tools ? root.tools.slice(0, 3) : []
+                model: root.tools ? root.tools.slice(0, 5) : []
                 delegate: RowLayout {
                     Layout.fillWidth: true
                     Item {
@@ -103,7 +103,7 @@ ColumnLayout {
                 Layout.leftMargin: 4
             }
             Repeater {
-                model: root.skills ? root.skills.slice(0, 3) : []
+                model: root.skills ? root.skills.slice(0, 5) : []
                 delegate: RowLayout {
                     Layout.fillWidth: true
                     Item {
@@ -133,7 +133,7 @@ ColumnLayout {
                 Layout.leftMargin: 4
             }
             Repeater {
-                model: root.subagents ? root.subagents.slice(0, 3) : []
+                model: root.subagents ? root.subagents.slice(0, 5) : []
                 delegate: RowLayout {
                     Layout.fillWidth: true
                     Item {
@@ -163,7 +163,7 @@ ColumnLayout {
                 Layout.leftMargin: 4
             }
             Repeater {
-                model: root.mcpServers ? root.mcpServers.slice(0, 3) : []
+                model: root.mcpServers ? root.mcpServers.slice(0, 5) : []
                 delegate: RowLayout {
                     Layout.fillWidth: true
                     Item {
