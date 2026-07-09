@@ -196,6 +196,15 @@ PlasmoidItem {
         }
     }
 
+    // Fire-and-forget process executor
+    Plasma5Support.DataSource {
+        id: launcher
+        engine: "executable"
+        connectedSources: []
+        onNewData: (sourceName, data) => {
+            disconnectSource(sourceName);
+        }
+    }
     function fetchCLI(period, provider, scope, forceOptimize) {
         if (root.isFetching) return;
         root.isFetching = true;
@@ -562,6 +571,15 @@ PlasmoidItem {
                     enabled: !root.isFetching
                     onClicked: {
                         root.checkCacheAndFetch(true, true);
+                    }
+                }
+
+                // Launch CLI button
+                Button {
+                    text: "Full Report"
+                    onClicked: {
+                        var bin = plasmoid.configuration.codeburnBin || "codeburn";
+                        launcher.connectSource("konsole -e " + bin + " &");
                     }
                 }
 
