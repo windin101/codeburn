@@ -38,9 +38,17 @@ PlasmoidItem {
         base.textColor = Kirigami.Theme.textColor;
         base.textSecondaryColor = Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.7);
         base.textTertiaryColor = Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.55);
+        base.brandAccent = Kirigami.Theme.highlightColor;
+        base.brandMuted = Qt.rgba(base.brandAccent.r, base.brandAccent.g, base.brandAccent.b, 0.2);
+        
+        base.semanticWarning = "#F5A623";
+        base.semanticDanger = Kirigami.Theme.negativeTextColor;
+        base.semanticSuccess = Kirigami.Theme.positiveTextColor;
         base.borderColor = Qt.rgba(Kirigami.Theme.textColor.r, Kirigami.Theme.textColor.g, Kirigami.Theme.textColor.b, 0.15);
+        
         return base;
     }
+
     
     // Core data cache
     property var payloadCache: ({})
@@ -360,6 +368,9 @@ PlasmoidItem {
 
         onClicked: {
             root.expanded = !root.expanded;
+            if (root.expanded) {
+                root.checkCacheAndFetch(true, true);
+            }
         }
     }
 
