@@ -65,6 +65,9 @@ Item {
                     onClicked: {
                         control.currentIndex = index;
                         control.indexSelected(index);
+                        if (typeof root !== "undefined" && typeof root.checkCacheAndFetch === "function") {
+                            root.checkCacheAndFetch(true, false);
+                        }
                     }
                 }
             }
