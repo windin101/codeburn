@@ -1268,7 +1268,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         }
         for (const call of statusCalls) {
           seenKeys.add(call.deduplicationKey)
-          if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
+          yield call
         }
         return
       }
@@ -1287,7 +1287,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           applyAntigravityProject(call, source, projectPath)
           if (seenKeys.has(call.deduplicationKey)) continue
           seenKeys.add(call.deduplicationKey)
-          if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
+          yield call
         }
         return
       }
@@ -1303,6 +1303,9 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             call.tools = transcriptTools[i]!.tools
             call.bashCommands = transcriptTools[i]!.bashCommands
           }
+          if (!call.timestamp && s) {
+            call.timestamp = new Date(s.mtimeMs).toISOString()
+          }
         }
 
         cache.cascades[cascadeId] = {
@@ -1315,7 +1318,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         for (const call of sqliteResults) {
           if (seenKeys.has(call.deduplicationKey)) continue
           seenKeys.add(call.deduplicationKey)
-          if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
+          yield call
         }
         return
       }
@@ -1327,7 +1330,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             applyAntigravityProject(call, source, projectPath)
             if (seenKeys.has(call.deduplicationKey)) continue
             seenKeys.add(call.deduplicationKey)
-            if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
+            yield call
           }
         }
         return
@@ -1346,7 +1349,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             applyAntigravityProject(call, source, projectPath)
             if (seenKeys.has(call.deduplicationKey)) continue
             seenKeys.add(call.deduplicationKey)
-            if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
+            yield call
           }
         }
         return
@@ -1374,7 +1377,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       for (const call of results) {
         if (seenKeys.has(call.deduplicationKey)) continue
         seenKeys.add(call.deduplicationKey)
-        if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
+        yield call
       }
     },
   }
