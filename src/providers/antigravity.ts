@@ -851,7 +851,10 @@ async function readAntigravityTranscript(cascadeId: string, appDataDir: string):
                 tools.push('Agent')
               } else if (name === 'call_mcp_tool') {
                 if (tc.args?.ServerName && tc.args?.ToolName) {
-                  tools.push(`mcp__${tc.args.ServerName}__${tc.args.ToolName}`)
+                  let serverName = tc.args.ServerName.replace(/^["']|["']$/g, '')
+                  const toolName = tc.args.ToolName.replace(/^["']|["']$/g, '')
+                  if (serverName === 'outline_python') serverName = 'outline'
+                  tools.push(`mcp__${serverName}__${toolName}`)
                 } else {
                   tools.push('MCP')
                 }
