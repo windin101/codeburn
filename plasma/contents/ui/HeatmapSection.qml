@@ -24,12 +24,83 @@ ColumnLayout {
     }
 
     function getTotalTokens() {
-        if (!root.historyData) return 0;
+        if (!root.bucketedTrendData) return 0;
         var total = 0;
-        for (var i = 0; i < root.historyData.length; i++) {
-            total += (root.historyData[i].inputTokens || 0) + (root.historyData[i].outputTokens || 0);
+        for (var i = 0; i < root.bucketedTrendData.length; i++) {
+            total += (root.bucketedTrendData[i].inputTokens || 0) + (root.bucketedTrendData[i].outputTokens || 0);
         }
         return total;
+    }
+
+    property var bucketedTrendData: getBucketedTrendData(root.historyData, trendPeriodSwitcher.currentIndex)
+    
+    function getBucketedTrendData(historyArray, modeIndex) {
+        if (!historyArray || historyArray.length === 0) return [];
+        var res = [];
+        if (modeIndex === 0) { // Days
+            var startIdx = Math.max(0, historyArray.length - 30);
+            return historyArray.slice(startIdx);
+        } else if (modeIndex === 1) { // Weeks
+            var currentChunk = [];
+            var chunks = [];
+            for (var i = historyArray.length - 1; i >= 0; i--) {
+                currentChunk.unshift(historyArray[i]);
+                if (currentChunk.length === 7 || i === 0) {
+                    chunks.unshift(currentChunk);
+                    currentChunk = [];
+                }
+                if (chunks.length >= 52) break;
+            }
+            for (var c = 0; c < chunks.length; c++) {
+                var chunk = chunks[c];
+                var cost = 0, input = 0, output = 0;
+                for (var j = 0; j < chunk.length; j++) {
+                    cost += chunk[j].cost || 0;
+                    input += chunk[j].inputTokens || 0;
+                    output += chunk[j].outputTokens || 0;
+                }
+                res.push({ date: chunk[0].date, cost: cost, inputTokens: input, outputTokens: output });
+            }
+            return res;
+        } else if (modeIndex === 2) { // Months
+            var monthMap = {};
+            var monthKeys = [];
+            for (var k = 0; k < historyArray.length; k++) {
+                var prefix = historyArray[k].date.substring(0, 7);
+                if (!monthMap[prefix]) {
+                    monthMap[prefix] = { cost: 0, inputTokens: 0, outputTokens: 0, date: prefix };
+                    monthKeys.push(prefix);
+                }
+                monthMap[prefix].cost += historyArray[k].cost || 0;
+                monthMap[prefix].inputTokens += historyArray[k].inputTokens || 0;
+                monthMap[prefix].outputTokens += historyArray[k].outputTokens || 0;
+            }
+            var startM = Math.max(0, monthKeys.length - 24);
+            for (var m = startM; m < monthKeys.length; m++) {
+                res.push(monthMap[monthKeys[m]]);
+            }
+            return res;
+        }
+        return historyArray;
+    }
+
+    property real maxTrendCost: {
+        var m = 0.01;
+        var d = bucketedTrendData || [];
+        for (var i = 0; i < d.length; i++) {
+            if (d[i].cost > m) m = d[i].cost;
+        }
+        if (plasmoid.configuration.dailyBudget > 0 && plasmoid.configuration.dailyBudget > m && trendPeriodSwitcher.currentIndex === 0) {
+            m = plasmoid.configuration.dailyBudget;
+        }
+        return m;
+    }
+    
+    property real adjustedTargetSpend: {
+        var b = plasmoid.configuration.dailyBudget || 0;
+        if (trendPeriodSwitcher.currentIndex === 1) return b * 7;
+        if (trendPeriodSwitcher.currentIndex === 2) return b * 30.4;
+        return b;
     }
 
     function formatTokens(t) {
@@ -55,28 +126,45 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            Column {
-                visible: root.historyData.length > 0
+            Row {
+                visible: root.bucketedTrendData.length > 0
                 anchors.top: parent.top
                 anchors.left: parent.left
+                anchors.right: parent.right
                 anchors.leftMargin: 4
                 anchors.topMargin: 4
-                spacing: 0
+                spacing: 12
                 z: 10
                 
-                Text {
-                    text: root.historyData.length + (root.historyData.length === 1 ? " Day" : " Days")
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize - 2
-                    color: Kirigami.Theme.textColor
-                    opacity: 0.6
+                Column {
+                    spacing: 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text {
+                        text: {
+                            if (trendPeriodSwitcher.currentIndex === 0) return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Day" : " Days");
+                            if (trendPeriodSwitcher.currentIndex === 1) return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Week" : " Weeks");
+                            return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Month" : " Months");
+                        }
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize - 2
+                        color: Kirigami.Theme.textColor
+                        opacity: 0.6
+                    }
+                    Text {
+                        text: root.formatTokens(root.getTotalTokens())
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 1
+                        font.bold: true
+                        color: Kirigami.Theme.textColor
+                        opacity: 0.8
+                    }
                 }
                 
-                Text {
-                    text: root.formatTokens(root.getTotalTokens())
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize + 1
-                    font.bold: true
-                    color: Kirigami.Theme.textColor
-                    opacity: 0.8
+                SegmentedControl {
+                    id: trendPeriodSwitcher
+                    width: 180
+                    implicitHeight: Math.max(22, Kirigami.Theme.defaultFont.pointSize * 2)
+                    anchors.verticalCenter: parent.verticalCenter
+                    model: ["Days", "Weeks", "Months"]
+                    colors: root.colors
                 }
             }
 
@@ -93,15 +181,15 @@ ColumnLayout {
                 anchors.fill: parent
                 anchors.bottom: parent.bottom
                 spacing: 3
-                visible: root.historyData.length > 0
+                visible: root.bucketedTrendData.length > 0
 
                 Repeater {
-                    model: root.historyData
+                    model: root.bucketedTrendData
                     delegate: Rectangle {
-                        width: (trendView.width - (root.historyData.length * 3)) / Math.max(1, root.historyData.length)
-                        height: Math.max(4, (modelData.cost / Math.max(0.01, root.maxHistoryCost)) * (trendView.height - 16))
+                        width: (trendView.width - (root.bucketedTrendData.length * 3)) / Math.max(1, root.bucketedTrendData.length)
+                        height: Math.max(4, (modelData.cost / Math.max(0.01, root.maxTrendCost)) * (trendView.height - 16))
                         anchors.bottom: parent.bottom
-                        color: (plasmoid.configuration.dailyBudget > 0 && modelData.cost > plasmoid.configuration.dailyBudget && root.displayMetric === "cost") ? root.colors.semanticWarning : root.colors.brandAccent
+                        color: (root.adjustedTargetSpend > 0 && modelData.cost > root.adjustedTargetSpend && root.displayMetric === "cost") ? root.colors.semanticWarning : root.colors.brandAccent
                         opacity: hoverArea.containsMouse ? 1.0 : 0.7
                         radius: 2
 
@@ -118,10 +206,10 @@ ColumnLayout {
 
             // Dotted target line
             Row {
-                visible: plasmoid.configuration.dailyBudget > 0 && root.historyData.length > 0 && root.displayMetric === "cost"
+                visible: root.adjustedTargetSpend > 0 && root.bucketedTrendData.length > 0 && root.displayMetric === "cost"
                 anchors.left: parent.left
                 anchors.right: parent.right
-                y: Math.max(0, parent.height - Math.max(4, (plasmoid.configuration.dailyBudget / Math.max(0.01, root.maxHistoryCost)) * (parent.height - 16)))
+                y: Math.max(0, parent.height - Math.max(4, (root.adjustedTargetSpend / Math.max(0.01, root.maxTrendCost)) * (parent.height - 16)))
                 height: 2
                 spacing: 4
                 clip: true

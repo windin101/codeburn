@@ -35,7 +35,7 @@ import type { OptimizeResult } from './optimize.js'
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_MODELS_LIMIT = 20
 const TOP_FINDINGS_LIMIT = 10
-const HISTORY_DAYS_LIMIT = 365
+const HISTORY_DAYS_LIMIT = 730
 const SYNTHETIC_MODEL_NAME = '<synthetic>'
 const TOP_PROJECTS_LIMIT = 5
 const TOP_SESSIONS_LIMIT = 3
