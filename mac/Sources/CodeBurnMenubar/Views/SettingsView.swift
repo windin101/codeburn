@@ -122,6 +122,21 @@ private struct GeneralSettingsTab: View {
                 }
             }
 
+            Section("Usage Refresh") {
+                Picker("Update every", selection: Binding(
+                    get: { UsageRefreshCadence.current },
+                    set: { UsageRefreshCadence.current = $0 }
+                )) {
+                    ForEach(UsageRefreshCadence.allCases) { cadence in
+                        Text(cadence.label).tag(cadence)
+                    }
+                }
+                .pickerStyle(.menu)
+                Text("How often the menubar figure re-reads your local session data. Auto refreshes every 30 seconds while you're plugged in and backs off on battery; Manual only refreshes when you open the popover or click Refresh Now.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Alerts") {
                 // The budget tracks whatever the menubar metric shows: dollars for
                 // the Cost metric, tokens for the Tokens / Total Tokens metrics.
@@ -235,20 +250,6 @@ private struct ClaudeSettingsTab: View {
                 Text("Config Directories")
             } footer: {
                 Text("Aggregate usage across multiple Claude config directories (e.g. work and personal accounts). Leave empty to track just the default `~/.claude`. The `CLAUDE_CONFIG_DIRS` environment variable, if set, overrides this list.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-            Section("Usage Refresh") {
-                Picker("Update every", selection: Binding(
-                    get: { UsageRefreshCadence.current },
-                    set: { UsageRefreshCadence.current = $0 }
-                )) {
-                    ForEach(UsageRefreshCadence.allCases) { cadence in
-                        Text(cadence.label).tag(cadence)
-                    }
-                }
-                .pickerStyle(.menu)
-                Text("How often the menubar figure re-reads your local session data. Auto refreshes every 30 seconds while you're plugged in and backs off on battery; Manual only refreshes when you open the popover or click Refresh Now.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
