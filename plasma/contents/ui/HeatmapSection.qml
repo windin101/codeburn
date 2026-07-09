@@ -55,17 +55,29 @@ ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
 
-            Text {
+            Column {
                 visible: root.historyData.length > 0
                 anchors.top: parent.top
                 anchors.left: parent.left
-                anchors.leftMargin: 2
-                anchors.topMargin: 2
-                text: root.formatTokens(root.getTotalTokens())
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize - 1
-                color: Kirigami.Theme.textColor
-                opacity: 0.5
+                anchors.leftMargin: 4
+                anchors.topMargin: 4
+                spacing: 0
                 z: 10
+                
+                Text {
+                    text: root.historyData.length + (root.historyData.length === 1 ? " Day" : " Days")
+                    font.pointSize: Kirigami.Theme.defaultFont.pointSize - 2
+                    color: Kirigami.Theme.textColor
+                    opacity: 0.6
+                }
+                
+                Text {
+                    text: root.formatTokens(root.getTotalTokens())
+                    font.pointSize: Kirigami.Theme.defaultFont.pointSize + 1
+                    font.bold: true
+                    color: Kirigami.Theme.textColor
+                    opacity: 0.8
+                }
             }
 
             Text {
