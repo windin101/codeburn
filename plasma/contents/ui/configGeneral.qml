@@ -71,7 +71,7 @@ Kirigami.FormLayout {
 
     TextField {
         id: dailyBudgetField
-        Kirigami.FormData.label: "Daily Cost Budget ($)"
+        Kirigami.FormData.label: "Target Spend / Budget ($)"
         placeholderText: "0.00"
         validator: DoubleValidator { bottom: 0.0 }
     }

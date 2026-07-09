@@ -61,7 +61,7 @@ ColumnLayout {
                         width: (trendView.width - (root.historyData.length * 3)) / Math.max(1, root.historyData.length)
                         height: Math.max(4, (modelData.cost / Math.max(0.01, root.maxHistoryCost)) * (trendView.height - 16))
                         anchors.bottom: parent.bottom
-                        color: root.colors.brandAccent
+                        color: (plasmoid.configuration.dailyBudget > 0 && modelData.cost > plasmoid.configuration.dailyBudget && root.displayMetric === "cost") ? root.colors.semanticWarning : root.colors.brandAccent
                         opacity: hoverArea.containsMouse ? 1.0 : 0.7
                         radius: 2
 
@@ -72,6 +72,27 @@ ColumnLayout {
                             ToolTip.visible: containsMouse
                             ToolTip.text: modelData.date + "\n" + (root.displayMetric === "tokens" ? (modelData.inputTokens + modelData.outputTokens).toLocaleString() + " tok" : "$" + Number(modelData.cost).toFixed(2))
                         }
+                    }
+                }
+            }
+
+            // Dotted target line
+            Row {
+                visible: plasmoid.configuration.dailyBudget > 0 && root.historyData.length > 0 && root.displayMetric === "cost"
+                anchors.left: parent.left
+                anchors.right: parent.right
+                y: Math.max(0, parent.height - Math.max(4, (plasmoid.configuration.dailyBudget / Math.max(0.01, root.maxHistoryCost)) * (parent.height - 16)))
+                height: 2
+                spacing: 4
+                clip: true
+                
+                Repeater {
+                    model: parent.width > 0 ? Math.floor(parent.width / 8) : 0
+                    delegate: Rectangle {
+                        width: 4
+                        height: 2
+                        color: root.colors.semanticWarning
+                        opacity: 0.8
                     }
                 }
             }
