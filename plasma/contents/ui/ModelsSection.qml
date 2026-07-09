@@ -12,6 +12,16 @@ ColumnLayout {
     property var colors: ({})
     property string displayMetric: "cost"
 
+    property real maxMetric: {
+        var m = 0;
+        var arr = root.models || [];
+        for (var i = 0; i < arr.length; i++) {
+            var val = (root.displayMetric === "tokens" || root.displayMetric === "totalTokens") ? 
+                      ((arr[i].inputTokens || 0) + (arr[i].outputTokens || 0)) : (arr[i].cost || 0);
+            if (val > m) m = val;
+        }
+        return m || 0.0001;
+    }
     Text {
         text: "TOP MODELS"
         font.pointSize: Kirigami.Theme.defaultFont.pointSize - 1
@@ -41,6 +51,30 @@ ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 8
 
+                // Bar Graph
+                Item {
+                    Layout.preferredWidth: Kirigami.Units.gridUnit * 2.5
+                    Layout.preferredHeight: 4
+                    Layout.alignment: Qt.AlignVCenter
+                    
+                    Rectangle {
+                        anchors.fill: parent
+                        color: Kirigami.Theme.textColor
+                        opacity: 0.1
+                        radius: 2
+                    }
+                    Rectangle {
+                        height: parent.height
+                        width: {
+                            if (!modelData) return 0;
+                            var val = (root.displayMetric === "tokens" || root.displayMetric === "totalTokens") ? 
+                                      ((modelData.inputTokens || 0) + (modelData.outputTokens || 0)) : (modelData.cost || 0);
+                            return Math.min(parent.width, Math.max(0, parent.width * (val / root.maxMetric)));
+                        }
+                        color: root.colors.primaryBrand || Kirigami.Theme.highlightColor
+                        radius: 2
+                    }
+                }
                 Text {
                     text: modelData ? (modelData.name || "") : ""
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize
