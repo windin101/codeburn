@@ -1,0 +1,22 @@
+{
+    "KPlugin": {
+        "Name": "CodeBurn",
+        "Description": "AI coding cost and token usage tracker",
+        "Id": "org.codeburn.plasmoid",
+        "Version": "1.0",
+        "License": "GPL-3.0+",
+        "Category": "Utilities",
+        "Website": "https://codeburn.app",
+        "Icon": "utilities-terminal",
+        "Authors": [
+            {
+                "Name": "Leeo",
+                "Email": "info@codeburn.app"
+            }
+        ]
+    },
+    "X-Plasma-API-Minimum-Version": "6.0",
+    "X-Plasma-API": "declarativeappletscript",
+    "X-Plasma-MainScript": "ui/main.qml",
+    "KPackageStructure": "Plasma/Applet"
+}
