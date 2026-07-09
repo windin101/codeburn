@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url'
 import https from 'https'
 
 import { calculateCost } from '../models.js'
+import { extractBashCommands } from '../bash-utils.js'
 import { isSqliteAvailable, isSqliteBusyError, openDatabase } from '../sqlite.js'
 import type { Provider, SessionSource, SessionParser, ParsedProviderCall } from './types.js'
 
@@ -815,6 +816,60 @@ function usageDelta(current: StatusLineEvent['usage'], previous: StatusLineEvent
   }
 }
 
+
+type TranscriptTurnTools = {
+  tools: string[]
+  bashCommands: string[]
+}
+
+async function readAntigravityTranscript(cascadeId: string, appDataDir: string): Promise<TranscriptTurnTools[]> {
+  const transcriptPath = join(homedir(), '.gemini', appDataDir, 'brain', cascadeId, '.system_generated', 'logs', 'transcript.jsonl')
+  const results: TranscriptTurnTools[] = []
+  try {
+    const raw = await readFile(transcriptPath, 'utf-8')
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line.trim()) continue
+      try {
+        const parsed = JSON.parse(line)
+        if (parsed.type === 'PLANNER_RESPONSE') {
+          const tools: string[] = []
+          const bashCommands: string[] = []
+          if (Array.isArray(parsed.tool_calls)) {
+            for (const tc of parsed.tool_calls) {
+              const name = tc.name
+              if (!name) continue
+              if (name === 'run_command' || name === 'unsandboxed') {
+                tools.push('Bash')
+                if (tc.args?.CommandLine) bashCommands.push(...extractBashCommands(tc.args.CommandLine))
+              } else if (name === 'view_file' || name === 'grep_search' || name === 'read_file' || name === 'list_dir' || name === 'read_url_content' || name === 'read_url' || name === 'read_resource') {
+                tools.push('Read')
+              } else if (name === 'replace_file_content' || name === 'multi_replace_file_content' || name === 'write_to_file' || name === 'write_file') {
+                tools.push('Edit')
+              } else if (name === 'search_web') {
+                tools.push('WebSearch')
+              } else if (name === 'invoke_subagent' || name === 'browser_subagent') {
+                tools.push('Agent')
+              } else if (name === 'call_mcp_tool') {
+                if (tc.args?.ServerName && tc.args?.ToolName) {
+                  tools.push(`mcp__${tc.args.ServerName}__${tc.args.ToolName}`)
+                } else {
+                  tools.push('MCP')
+                }
+              } else if (name === 'ask_question' || name === 'ask_permission') {
+                tools.push('Ask')
+              } else {
+                tools.push(name.charAt(0).toUpperCase() + name.slice(1))
+              }
+            }
+          }
+          results.push({ tools, bashCommands })
+        }
+      } catch { /* skip invalid json */ }
+    }
+  } catch { /* file might not exist */ }
+  return results
+}
+
 export function antigravityCascadeIdFromPath(path: string): string {
   return basename(path).replace(/\.(pb|db)$/i, '')
 }
@@ -1201,9 +1256,19 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
   return {
     async *parse(): AsyncGenerator<ParsedProviderCall> {
       if (isAntigravityStatusLineEventsPath(source.path)) {
-        for (const call of await parseStatusLineCalls(source, seenKeys)) {
+        const appDir = antigravityAppDataDirFromSourcePath(source.path)
+        const transcriptTools = await readAntigravityTranscript(antigravityCascadeIdFromPath(source.path), appDir)
+        const statusCalls = await parseStatusLineCalls(source, seenKeys)
+        for (let i = 0; i < statusCalls.length; i++) {
+          const call = statusCalls[i]!
+          if (transcriptTools[i]) {
+            call.tools = transcriptTools[i]!.tools
+            call.bashCommands = transcriptTools[i]!.bashCommands
+          }
+        }
+        for (const call of statusCalls) {
           seenKeys.add(call.deduplicationKey)
-          yield call
+          if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
         }
         return
       }
@@ -1222,15 +1287,22 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
           applyAntigravityProject(call, source, projectPath)
           if (seenKeys.has(call.deduplicationKey)) continue
           seenKeys.add(call.deduplicationKey)
-          yield call
+          if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
         }
         return
       }
 
       const sqliteResults = await parseSqliteGenMetadataCalls(source.path, cascadeId)
       if (sqliteResults.length > 0) {
-        for (const call of sqliteResults) {
+        const appDir = antigravityAppDataDirFromSourcePath(source.path)
+        const transcriptTools = await readAntigravityTranscript(cascadeId, appDir)
+        for (let i = 0; i < sqliteResults.length; i++) {
+          const call = sqliteResults[i]!
           applyAntigravityProject(call, source, projectPath)
+          if (transcriptTools[i]) {
+            call.tools = transcriptTools[i]!.tools
+            call.bashCommands = transcriptTools[i]!.bashCommands
+          }
         }
 
         cache.cascades[cascadeId] = {
@@ -1243,7 +1315,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
         for (const call of sqliteResults) {
           if (seenKeys.has(call.deduplicationKey)) continue
           seenKeys.add(call.deduplicationKey)
-          yield call
+          if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
         }
         return
       }
@@ -1255,7 +1327,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             applyAntigravityProject(call, source, projectPath)
             if (seenKeys.has(call.deduplicationKey)) continue
             seenKeys.add(call.deduplicationKey)
-            yield call
+            if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
           }
         }
         return
@@ -1274,15 +1346,22 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
             applyAntigravityProject(call, source, projectPath)
             if (seenKeys.has(call.deduplicationKey)) continue
             seenKeys.add(call.deduplicationKey)
-            yield call
+            if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
           }
         }
         return
       }
 
       const results = buildCallsFromGeneratorMetadata(cascadeId, metadata, modelMap)
-      for (const call of results) {
+      const appDir = antigravityAppDataDirFromSourcePath(source.path)
+      const transcriptTools = await readAntigravityTranscript(cascadeId, appDir)
+      for (let i = 0; i < results.length; i++) {
+        const call = results[i]!
         applyAntigravityProject(call, source, projectPath)
+        if (transcriptTools[i]) {
+          call.tools = transcriptTools[i]!.tools
+          call.bashCommands = transcriptTools[i]!.bashCommands
+        }
       }
 
       cache.cascades[cascadeId] = {
@@ -1295,7 +1374,7 @@ function createParser(source: SessionSource, seenKeys: Set<string>): SessionPars
       for (const call of results) {
         if (seenKeys.has(call.deduplicationKey)) continue
         seenKeys.add(call.deduplicationKey)
-        yield call
+        if(call.tools.length>0) console.log("YIELDING:", call.tools); yield call
       }
     },
   }
