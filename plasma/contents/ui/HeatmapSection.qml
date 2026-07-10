@@ -113,6 +113,7 @@ ColumnLayout {
         id: insightSwitcher
         model: ["Trend", "Calendar", "Stats", "Optimize"]
         colors: root.colors
+        highlightColor: "#36454F"
     }
 
     StackLayout {
@@ -165,6 +166,7 @@ ColumnLayout {
                     anchors.verticalCenter: parent.verticalCenter
                     model: ["Days", "Weeks", "Months"]
                     colors: root.colors
+                    highlightColor: "#36454F"
                 }
             }
 
