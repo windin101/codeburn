@@ -305,6 +305,10 @@ bash plasma/install.sh
 
 One script: installs the CodeBurn Plasma widget into `~/.local/share/plasma/plasmoids/` and reloads the Plasma shell. Re-run it anytime to upgrade. The native QML and Kirigami widget lives in `plasma/`.
 
+<p align="center">
+  <img src="assets/codeburn-kde.png" alt="CodeBurn KDE Plasma Widget" width="440" />
+</p>
+
 The widget can be added to your panel or desktop, showing your Hero Spend for the active period. Clicking it expands a fully-featured dashboard featuring:
 - **Scope Toggles**: Switch between Local Spend and Combined device usage.
 - **Provider Filtering**: Filter insights by specific tools (Claude, Cursor, Gemini, etc.) using stylish flat tabs.
