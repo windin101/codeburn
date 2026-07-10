@@ -588,8 +588,29 @@ PlasmoidItem {
                 // Manual refresh button
                 Button {
                     text: "⟳"
-                    Layout.fillHeight: true
+                    implicitHeight: 28
+                    implicitWidth: 32
                     enabled: !root.isFetching
+                    
+                    background: Rectangle {
+                        color: parent.down ? Qt.rgba(128,128,128,0.2) : (parent.hovered ? Qt.rgba(128,128,128,0.1) : "transparent")
+                        radius: 3
+                        border.color: Kirigami.Theme.focusColor
+                        border.width: 1
+                        opacity: 0.3
+                    }
+                    contentItem: Text {
+                        text: parent.text
+                        font.family: Kirigami.Theme.defaultFont.family
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 4 // Bump size to match emoji
+                        font.weight: Font.Normal
+                        font.bold: false
+                        color: Kirigami.Theme.textColor
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                        opacity: parent.enabled ? 1.0 : 0.5
+                    }
+
                     onClicked: {
                         root.checkCacheAndFetch(true, true);
                     }
@@ -598,7 +619,8 @@ PlasmoidItem {
                 // Launch CLI button
                 Button {
                     text: "Full Report"
-                    Layout.fillHeight: true
+                    implicitHeight: 28
+                    Layout.fillWidth: true
                     
                     background: Rectangle {
                         color: parent.down ? Qt.darker(root.colors.brandAccent, 1.2) : (parent.hovered ? Qt.lighter(root.colors.brandAccent, 1.1) : root.colors.brandAccent)
@@ -625,6 +647,7 @@ PlasmoidItem {
                 // Error text
                 Text {
                     id: errorLabel
+                    visible: text !== ""
                     text: root.lastError
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize - 1
                     color: root.colors.semanticDanger
@@ -643,7 +666,26 @@ PlasmoidItem {
                 Button {
                     id: settingsBtn
                     text: "⚙️"
-                    Layout.fillHeight: true
+                    implicitHeight: 28
+                    implicitWidth: 32
+                    
+                    background: Rectangle {
+                        color: parent.down ? Qt.rgba(128,128,128,0.2) : (parent.hovered ? Qt.rgba(128,128,128,0.1) : "transparent")
+                        radius: 3
+                        border.color: Kirigami.Theme.focusColor
+                        border.width: 1
+                        opacity: 0.3
+                    }
+                    contentItem: Text {
+                        text: parent.text
+                        font.family: Kirigami.Theme.defaultFont.family
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 1
+                        font.weight: Font.Normal
+                        font.bold: false
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
                     onClicked: {
                         plasmoid.internalAction("configure").trigger();
                         root.checkCacheAndFetch(true, true);
