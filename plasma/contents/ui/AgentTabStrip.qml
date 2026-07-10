@@ -5,7 +5,7 @@ import org.kde.kirigami 2.20 as Kirigami
 
 Item {
     id: root
-    implicitHeight: Math.max(48, Kirigami.Theme.defaultFont.pointSize * 4.4)
+    implicitHeight: Math.max(32, Kirigami.Theme.defaultFont.pointSize * 2.8)
     Layout.fillWidth: true
 
     property var providers: []
@@ -69,8 +69,8 @@ Item {
                         height: parent.height - 8
                         flat: true
                         
-                        leftPadding: 12
-                        rightPadding: 12
+                        leftPadding: 8
+                        rightPadding: 8
                         topPadding: 4
                         bottomPadding: 4
                         
@@ -86,26 +86,26 @@ Item {
                             opacity: tabButton.isActive ? 1.0 : 0.3
                         }
 
-                        contentItem: ColumnLayout {
-                            spacing: 1
+                        contentItem: RowLayout {
+                            spacing: 4
                             Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
                             
                             Text {
                                 text: root.getProviderLabel(modelData)
                                 font.pointSize: Kirigami.Theme.defaultFont.pointSize - 1
-                                font.bold: tabButton.isActive
+                                font.bold: true
                                 color: tabButton.isActive ? "#FFFFFF" : Kirigami.Theme.textColor
-                                Layout.alignment: Qt.AlignHCenter
+                                Layout.alignment: Qt.AlignBaseline
                             }
                             
                             Text {
                                 text: root.formatCost(root.providerCosts[modelData])
-                                font.pointSize: Kirigami.Theme.defaultFont.pointSize - 2.5
-                                font.family: "monospace"
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize - 1
+                                font.weight: Font.Normal
+                                font.bold: false
                                 color: tabButton.isActive ? "#FFFFFF" : Kirigami.Theme.textColor
-                                opacity: tabButton.isActive ? 0.8 : 0.6
-                                Layout.alignment: Qt.AlignHCenter
+                                opacity: tabButton.isActive ? 0.9 : 0.7
+                                Layout.alignment: Qt.AlignBaseline
                             }
                         }
 

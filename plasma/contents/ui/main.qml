@@ -429,6 +429,7 @@ PlasmoidItem {
                 model: ["Local", "Combined"]
                 currentIndex: root.activeScope === "combined" ? 1 : 0
                 colors: root.colors
+                highlightColor: "#36454F"
                 Layout.bottomMargin: 8
                 onIndexSelected: (index) => {
                     root.activeScope = index === 1 ? "combined" : "local";
