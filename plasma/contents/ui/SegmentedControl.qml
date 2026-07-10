@@ -11,6 +11,7 @@ Item {
     property int currentIndex: 0
     property var colors: ({})
     property color highlightColor: Kirigami.Theme.isDarkMode ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(255, 255, 255, 0.85)
+    property color highlightTextColor: Kirigami.Theme.textColor
 
     signal indexSelected(int index)
 
@@ -54,7 +55,7 @@ Item {
                     text: modelData
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize
                     font.bold: control.currentIndex === index
-                    color: Kirigami.Theme.textColor
+                    color: control.currentIndex === index ? control.highlightTextColor : Kirigami.Theme.textColor
                     opacity: control.currentIndex === index ? 1.0 : 0.6
                     
                     Behavior on opacity { NumberAnimation { duration: 100 } }

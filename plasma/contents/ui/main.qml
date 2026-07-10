@@ -599,6 +599,19 @@ PlasmoidItem {
                 Button {
                     text: "Full Report"
                     implicitHeight: 28
+                    
+                    background: Rectangle {
+                        color: parent.down ? Qt.darker(root.colors.brandAccent, 1.2) : (parent.hovered ? Qt.lighter(root.colors.brandAccent, 1.1) : root.colors.brandAccent)
+                        radius: 3
+                    }
+                    contentItem: Text {
+                        text: parent.text
+                        font: parent.font
+                        color: "#FFFFFF"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+
                     onClicked: {
                         var bin = plasmoid.configuration.codeburnBin || "codeburn";
                         launcher.connectSource("konsole -e " + bin + " &");
