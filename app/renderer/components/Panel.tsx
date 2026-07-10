@@ -4,12 +4,15 @@ import type { CSSProperties, ReactNode } from 'react'
 export function Panel({
   title,
   right,
+  rightLink,
   className,
   bodyStyle,
   children,
 }: {
   title?: ReactNode
   right?: ReactNode
+  /** Render the `right` slot as a lavender action link (`.r.link`, e.g. "See all ›"). */
+  rightLink?: boolean
   className?: string
   bodyStyle?: CSSProperties
   children?: ReactNode
@@ -19,7 +22,7 @@ export function Panel({
       {title !== undefined && (
         <div className="phead">
           <b>{title}</b>
-          {right !== undefined && <span className="r">{right}</span>}
+          {right !== undefined && <span className={rightLink ? 'r link' : 'r'}>{right}</span>}
         </div>
       )}
       <div className="pbody" style={bodyStyle}>

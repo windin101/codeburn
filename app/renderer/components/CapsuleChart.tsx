@@ -18,13 +18,16 @@ function fmtAxis(v: number): string {
  * = cost / axisMax where axisMax is the peak day's spend, so the tallest bar
  * fills the plot (CSS `min-height` shows a stub for $0 days). The peak day gets
  * the gradient+glow treatment (`.c.hi`), the runner-up plain blue (`.c.hi2`).
- * Gridline labels read peak / half / zero; the day axis shows up to five evenly
- * spaced dates.
+ * Gridline labels read peak / half / zero (peak+half hidden when every day is
+ * $0); the day axis shows up to five evenly spaced dates.
  */
 export function CapsuleChart({ daily }: { daily: DailyHistoryEntry[] }) {
   const costs = daily.map(d => d.cost)
   const max = costs.reduce((m, c) => (c > m ? c : m), 0)
-  const axisMax = max > 0 ? max : 1
+  // A window where every day is $0 (real for all-local-model days) has no scale:
+  // keep axisMax=1 for bar math but suppress the fabricated peak/half labels.
+  const hasSpend = max > 0
+  const axisMax = hasSpend ? max : 1
 
   // Peak (.c.hi) = highest-cost day, runner-up (.c.hi2) = second highest. Strict
   // `>` keeps the earliest day on ties and never highlights a $0 day.
@@ -48,12 +51,8 @@ export function CapsuleChart({ daily }: { daily: DailyHistoryEntry[] }) {
   return (
     <>
       <div className="plot">
-        <div className="gl" style={{ top: 0 }}>
-          <em>{fmtAxis(axisMax)}</em>
-        </div>
-        <div className="gl" style={{ top: '50%' }}>
-          <em>{fmtAxis(axisMax / 2)}</em>
-        </div>
+        <div className="gl" style={{ top: 0 }}>{hasSpend && <em>{fmtAxis(axisMax)}</em>}</div>
+        <div className="gl" style={{ top: '50%' }}>{hasSpend && <em>{fmtAxis(axisMax / 2)}</em>}</div>
         <div className="gl" style={{ top: '100%' }}>
           <em>0</em>
         </div>
