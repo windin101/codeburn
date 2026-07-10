@@ -581,7 +581,7 @@ PlasmoidItem {
 
                 // Manual refresh button
                 Button {
-                    text: "Refresh"
+                    text: "⟳"
                     enabled: !root.isFetching
                     onClicked: {
                         root.checkCacheAndFetch(true, true);
