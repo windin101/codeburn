@@ -59,6 +59,7 @@ PlasmoidItem {
     // FX Rates
     property double exchangeRate: 1.0
     property string currencySymbol: "$"
+    property string currencyCode: "USD"
 
     // State selections (mirrored from configuration)
     property string activePeriod: plasmoid.configuration.period || "today"
@@ -234,6 +235,7 @@ PlasmoidItem {
         if (curr === "USD") {
             root.exchangeRate = 1.0;
             root.currencySymbol = "$";
+            root.currencyCode = "USD";
             return;
         }
         
@@ -243,6 +245,7 @@ PlasmoidItem {
             "CHF": "CHF", "SEK": "kr", "DKK": "kr", "ZAR": "R"
         };
         root.currencySymbol = symbols[curr] || curr;
+        root.currencyCode = curr;
         
         var xhr = new XMLHttpRequest();
         xhr.open("GET", "https://api.frankfurter.app/latest?from=USD&to=" + curr);
@@ -500,6 +503,7 @@ PlasmoidItem {
                             : ""
                         combinedUsage: (root.activeScope === "combined" && root.currentPayload) ? root.currentPayload.combined : null
                         colors: root.colors
+                        currencyCode: root.currencySymbol === "$" ? root.currencyCode : ""
                     }
 
                     Kirigami.Separator { Layout.fillWidth: true; opacity: 0.5 }

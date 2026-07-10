@@ -17,6 +17,7 @@ ColumnLayout {
     property string savingsText: ""
     property var combinedUsage: null
     property var colors: ({})
+    property string currencyCode: ""
 
     function formatNumber(num) {
         if (num === undefined) return "0";
@@ -48,13 +49,30 @@ ColumnLayout {
         Layout.fillWidth: true
         spacing: 12
 
-        Text {
-            text: root.heroText
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize + 22
-            font.family: Kirigami.Theme.defaultFont.family
-            font.bold: true
-            color: root.colors.brandAccent
+        RowLayout {
+            spacing: 4
             Layout.fillWidth: true
+
+            Text {
+                text: root.heroText
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize + 22
+                font.family: Kirigami.Theme.defaultFont.family
+                font.bold: true
+                color: root.colors.brandAccent
+            }
+
+            Text {
+                visible: root.displayMetric === "cost" && root.currencyCode !== ""
+                text: root.currencyCode
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize
+                font.bold: true
+                color: root.colors.brandAccent
+                opacity: 0.6
+                Layout.alignment: Qt.AlignBottom
+                Layout.bottomMargin: 6
+            }
+
+            Item { Layout.fillWidth: true }
         }
 
         ColumnLayout {
