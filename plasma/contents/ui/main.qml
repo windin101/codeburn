@@ -433,22 +433,35 @@ PlasmoidItem {
                 }
             }
 
-            // Period Selector
-            SegmentedControl {
-                id: periodSelector
-                model: ["Today", "7 Days", "30 Days", "Month", "All Time"]
-                currentIndex: {
-                    if (root.activePeriod === "today") return 0;
-                    if (root.activePeriod === "week") return 1;
-                    if (root.activePeriod === "30days") return 2;
-                    if (root.activePeriod === "month") return 3;
-                    return 4;
+            // Agent Tab Strip (Provider filters)
+            AgentTabStrip {
+                id: agentTabStrip
+                Layout.fillWidth: true
+                providers: {
+                    if (!root.currentPayload) return ["all"];
+                    var keys = ["all"];
+                    var map = root.currentPayload.current.providers || {};
+                    for (var k in map) {
+                        if (map.hasOwnProperty(k)) keys.push(k);
+                    }
+                    return keys;
                 }
+                providerCosts: {
+                    if (!root.currentPayload) return ({ "all": 0 });
+                    var map = ({ "all": root.activeCost });
+                    var currentProviders = root.currentPayload.current.providers || {};
+                    for (var k in currentProviders) {
+                        if (currentProviders.hasOwnProperty(k)) {
+                            map[k] = currentProviders[k];
+                        }
+                    }
+                    return map;
+                }
+                activeProvider: root.activeProvider
                 colors: root.colors
-                Layout.bottomMargin: 10
-                onIndexSelected: (index) => {
-                    var mapping = ["today", "week", "30days", "month", "all"];
-                    root.activePeriod = mapping[index];
+                Layout.bottomMargin: 4
+                onProviderSelected: (provider) => {
+                    root.activeProvider = provider;
                     root.checkCacheAndFetch(false, false);
                 }
             }
@@ -489,32 +502,21 @@ PlasmoidItem {
 
                     Kirigami.Separator { Layout.fillWidth: true; opacity: 0.5 }
 
-                    // Agent Tab Strip (Provider filters)
-                    AgentTabStrip {
-                        providers: {
-                            if (!root.currentPayload) return ["all"];
-                            var keys = ["all"];
-                            var map = root.currentPayload.current.providers || {};
-                            for (var k in map) {
-                                if (map.hasOwnProperty(k)) keys.push(k);
-                            }
-                            return keys;
+                    // Period Selector
+                    SegmentedControl {
+                        id: periodSelector
+                        model: ["Today", "7 Days", "30 Days", "Month", "All Time"]
+                        currentIndex: {
+                            if (root.activePeriod === "today") return 0;
+                            if (root.activePeriod === "week") return 1;
+                            if (root.activePeriod === "30days") return 2;
+                            if (root.activePeriod === "month") return 3;
+                            return 4;
                         }
-                        providerCosts: {
-                            if (!root.currentPayload) return ({ "all": 0 });
-                            var map = ({ "all": root.activeCost });
-                            var currentProviders = root.currentPayload.current.providers || {};
-                            for (var k in currentProviders) {
-                                if (currentProviders.hasOwnProperty(k)) {
-                                    map[k] = currentProviders[k];
-                                }
-                            }
-                            return map;
-                        }
-                        activeProvider: root.activeProvider
                         colors: root.colors
-                        onProviderSelected: (provider) => {
-                            root.activeProvider = provider;
+                        onIndexSelected: (index) => {
+                            var mapping = ["today", "week", "30days", "month", "all"];
+                            root.activePeriod = mapping[index];
                             root.checkCacheAndFetch(false, false);
                         }
                     }
