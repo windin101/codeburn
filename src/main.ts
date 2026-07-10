@@ -17,7 +17,7 @@ import { renderOverview } from './overview.js'
 import { runWebDashboard } from './web-dashboard.js'
 import { hostname } from 'os'
 import { runShareServer } from './sharing/share-run.js'
-import { addRemote, linkRemote, pullDevices, renderDevices, summarizeDeviceUsage } from './sharing/host.js'
+import { addRemote, linkRemote, pullDevices, renderDevices, summarizeDeviceUsage, aggregatePayloads } from './sharing/host.js'
 import { browse } from './sharing/discovery.js'
 import { promptChoice } from './sharing/prompt.js'
 import { loadRemotes, saveRemotes } from './sharing/store.js'
@@ -727,11 +727,21 @@ program
             ? { from: daySelection.day, to: daySelection.day }
             : { period: opts.period }
           const localGetUsage = async (): Promise<typeof payload> => payload
-          const results = await pullDevices(localGetUsage, query, hostname(), {})
+           const results = await pullDevices(localGetUsage, query, hostname(), {})
           payload.combined = summarizeDeviceUsage(results, {
             start: toDateString(periodInfo.range.start),
             end: toDateString(periodInfo.range.end),
           })
+          
+          const activePayloads = results
+            .map(r => r.payload as unknown as MenubarPayload)
+            .filter(Boolean);
+          if (activePayloads.length > 1) {
+            const aggregated = aggregatePayloads(activePayloads);
+            payload.current = aggregated.current;
+            payload.history = aggregated.history;
+            payload.optimize = aggregated.optimize;
+          }
         } catch {
           // best-effort only: the local payload is still emitted below
         }
