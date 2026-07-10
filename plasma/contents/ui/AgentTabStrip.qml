@@ -12,6 +12,8 @@ Item {
     property var providerCosts: ({})
     property string activeProvider: "all"
     property var colors: ({})
+    property real exchangeRate: 1.0
+    property string currencySymbol: "$"
 
     signal providerSelected(string provider)
 
@@ -26,8 +28,8 @@ Item {
     }
 
     function formatCost(cost) {
-        if (!cost) return "$0.00";
-        return "$" + Number(cost).toFixed(2);
+        if (!cost) return root.currencySymbol + "0.00";
+        return root.currencySymbol + Number(cost * root.exchangeRate).toFixed(2);
     }
 
     RowLayout {

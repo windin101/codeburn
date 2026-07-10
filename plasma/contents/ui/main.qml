@@ -459,6 +459,8 @@ PlasmoidItem {
                 }
                 activeProvider: root.activeProvider
                 colors: root.colors
+                exchangeRate: root.exchangeRate
+                currencySymbol: root.currencySymbol
                 Layout.bottomMargin: 4
                 onProviderSelected: (provider) => {
                     root.activeProvider = provider;
