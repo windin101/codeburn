@@ -582,6 +582,7 @@ PlasmoidItem {
                 // Manual refresh button
                 Button {
                     text: "⟳"
+                    implicitHeight: 28
                     enabled: !root.isFetching
                     onClicked: {
                         root.checkCacheAndFetch(true, true);
@@ -591,6 +592,7 @@ PlasmoidItem {
                 // Launch CLI button
                 Button {
                     text: "Full Report"
+                    implicitHeight: 28
                     onClicked: {
                         var bin = plasmoid.configuration.codeburnBin || "codeburn";
                         launcher.connectSource("konsole -e " + bin + " &");
@@ -618,6 +620,7 @@ PlasmoidItem {
                 // Settings button
                 Button {
                     text: "⚙️"
+                    implicitHeight: 28
                     onClicked: {
                         plasmoid.internalAction("configure").trigger();
                         root.checkCacheAndFetch(true, true);
