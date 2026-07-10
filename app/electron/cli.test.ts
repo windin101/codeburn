@@ -1,10 +1,10 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, writeFileSync, rmSync, chmodSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { spawnCli, CliError } from './cli'
+import { spawnCli, CliError, nodeManagerDirs } from './cli'
 
 let dir: string
 const originalBin = process.env.CODEBURN_BIN
@@ -58,6 +58,38 @@ describe('spawnCli', () => {
     } finally {
       delete process.env.CODEBURN_PATH_DIRS
       delete process.env.CODEBURN_CLI_PATH_FILE
+    }
+  })
+})
+
+describe('nodeManagerDirs (nvm resolution)', () => {
+  const savedNvm = process.env.NVM_DIR
+  afterEach(() => {
+    if (savedNvm === undefined) delete process.env.NVM_DIR
+    else process.env.NVM_DIR = savedNvm
+  })
+
+  it('scans nvm version dirs newest-first and takes the first that holds codeburn', () => {
+    // Two versions; the lexicographically-"newest" (v9.0.0 > v22.0.0 as strings)
+    // has NO codeburn, while the real newer v22.0.0 does. The old `sort().reverse()[0]`
+    // would pick v9.0.0's bin and miss the CLI entirely.
+    const nvm = mkdtempSync(join(tmpdir(), 'codeburn-nvm-'))
+    try {
+      const versions = join(nvm, 'versions', 'node')
+      const v9bin = join(versions, 'v9.0.0', 'bin')
+      const v22bin = join(versions, 'v22.0.0', 'bin')
+      mkdirSync(v9bin, { recursive: true })
+      mkdirSync(v22bin, { recursive: true })
+      const codeburn = join(v22bin, 'codeburn')
+      writeFileSync(codeburn, '#!/bin/sh\n', { mode: 0o755 })
+      chmodSync(codeburn, 0o755)
+
+      process.env.NVM_DIR = nvm
+      const dirs = nodeManagerDirs()
+      expect(dirs).toContain(v22bin)
+      expect(dirs).not.toContain(v9bin)
+    } finally {
+      rmSync(nvm, { recursive: true, force: true })
     }
   })
 })

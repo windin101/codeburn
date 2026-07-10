@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-// Envelope mirror of main.ts. Handlers resolve with { ok, value } | { ok, error }
-// so the structured error `kind` survives the contextBridge boundary.
-type Envelope<T = unknown> = { ok: true; value: T } | { ok: false; error: { kind: string; message: string } }
+// Handlers resolve with { ok, value } | { ok, error } so the structured error
+// `kind` survives the contextBridge boundary. `import type` is erased at build,
+// so this shares main.ts's declaration without pulling its runtime in.
+import type { Envelope } from './main'
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const res = (await ipcRenderer.invoke(channel, ...args)) as Envelope<T>

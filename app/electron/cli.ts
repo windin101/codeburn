@@ -22,7 +22,7 @@ const DEFAULT_TIMEOUT_MS = 45_000
 
 // Homebrew + common Node version managers, mirroring mac/CodeburnCLI.swift so a
 // GUI-launched app (minimal PATH) still finds a globally-installed `codeburn`.
-function nodeManagerDirs(): string[] {
+export function nodeManagerDirs(): string[] {
   const home = homedir()
   const dirs = [
     '/opt/homebrew/bin',
@@ -34,10 +34,17 @@ function nodeManagerDirs(): string[] {
   const nvmDir = process.env.NVM_DIR || join(home, '.nvm')
   const nvmVersions = join(nvmDir, 'versions', 'node')
   try {
-    // Prefer the newest installed node version's bin dir.
-    const entries = readdirSync(nvmVersions)
-    const newest = entries.sort().reverse()[0]
-    if (newest) dirs.push(join(nvmVersions, newest, 'bin'))
+    // Scan version dirs newest-first and take the first whose bin actually holds
+    // `codeburn`. A lexicographic max ("v9" > "v22") is not a real "newest", and
+    // the top dir may not even contain the CLI — so verify, matching CodeburnCLI.swift.
+    const entries = readdirSync(nvmVersions).sort().reverse()
+    for (const entry of entries) {
+      const bin = join(nvmVersions, entry, 'bin')
+      if (isExecutableFile(join(bin, 'codeburn'))) {
+        dirs.push(bin)
+        break
+      }
+    }
   } catch {
     // no nvm — ignore
   }

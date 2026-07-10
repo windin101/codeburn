@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { normalizeCliError } from '../lib/ipc'
 import type { CliError } from '../lib/types'
@@ -20,35 +20,41 @@ export function usePolled<T>(fetcher: () => Promise<T>, deps: unknown[], interva
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<CliError | null>(null)
   const [loading, setLoading] = useState(true)
+  // Generation counter: every load() (mount, deps change, interval, refresh)
+  // claims the next epoch; a fetch applies its result only while its epoch is
+  // still current. This is what keeps a slow fetch from an older deps/period
+  // from clobbering a newer one that already resolved.
+  const epochRef = useRef(0)
 
   const load = useCallback(() => {
-    let cancelled = false
+    const epoch = ++epochRef.current
     setLoading(true)
     fetcher()
       .then(result => {
-        if (cancelled) return
+        if (epochRef.current !== epoch) return
         setData(result)
         setError(null)
       })
       .catch(err => {
-        if (!cancelled) setError(normalizeCliError(err))
+        if (epochRef.current !== epoch) return
+        setError(normalizeCliError(err))
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (epochRef.current !== epoch) return
+        setLoading(false)
       })
-    return () => {
-      cancelled = true
-    }
     // deps are intentionally the caller-provided dependency list.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps)
 
   useEffect(() => {
-    const cancel = load()
+    load()
     const id = setInterval(() => load(), intervalMs)
     return () => {
-      cancel()
       clearInterval(id)
+      // Retire this generation so an in-flight fetch can't resolve into state
+      // after unmount or a deps change.
+      epochRef.current++
     }
   }, [load, intervalMs])
 
