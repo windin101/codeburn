@@ -18,13 +18,13 @@
     <a href="https://github.com/sponsors/iamtoruk"><img src="https://img.shields.io/badge/sponsor-♥-F97316?logo=github" alt="Sponsor" /></a>
 </p>
 
-**CodeBurn is a free, open-source, local-first tool that tracks AI coding token usage and cost across 31 tools and agents (Claude Code, Cursor, Codex, Gemini, Grok and more), broken down by model, project, and task.**
+**CodeBurn is a free, open-source, local-first tool that tracks AI coding token usage and cost across 32 tools and agents (Claude Code, Cursor, Codex, Gemini, Grok and more), broken down by model, project, and task.**
 
 > **Note:** This fork is implementing a KDE Plasma port of the menubar app.
 
 You pay for Claude, Codex, Cursor, and a stack of other AI tools. The bill tells you the total. It never tells you that half of it went to conversation instead of code, or that an expensive model burned your budget on work a cheaper one would have one-shot.
 
-CodeBurn does. It reads the session files your tools already write to disk and breaks down every token and dollar by **task, model, tool, and project**, across **31 AI tools**.
+CodeBurn does. It reads the session files your tools already write to disk and breaks down every token and dollar by **task, model, tool, and project**, across **32 AI tools**.
 
 Everything runs locally. No wrapper, no proxy, no API keys, nothing leaves your machine. Pricing comes from [LiteLLM](https://github.com/BerriAI/litellm), refreshed daily.
 
@@ -36,8 +36,11 @@ Everything runs locally. No wrapper, no proxy, no API keys, nothing leaves your 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
   <a href="#find-and-fix-waste">Find waste</a> ·
+  <a href="#apply-fixes-undo-anytime">Apply fixes</a> ·
+  <a href="#guard-your-budget">Guard</a> ·
   <a href="#compare-models">Compare models</a> ·
   <a href="#track-what-shipped">Track what shipped</a> ·
+  <a href="#codeburn-in-your-agent-mcp">MCP</a> ·
   <a href="#supported-tools">Supported tools</a> ·
   <a href="#commands">Commands</a> ·
   <a href="#features">Features</a> ·
@@ -67,6 +70,8 @@ Also runs via `bunx codeburn` or `dx codeburn`, or `brew install codeburn` on ma
 ```bash
 codeburn menubar
 ```
+
+On Linux, a GNOME Shell extension gives the same panel view; see [Linux (GNOME)](#linux-gnome).
 
 Requires **Node.js 22.13+** and at least one supported tool with session data on disk. For Cursor and OpenCode, `better-sqlite3` installs automatically.
 
@@ -132,6 +137,39 @@ codeburn optimize --format json         # setup health + findings as JSON
 Each finding shows the estimated token and dollar savings plus a ready-to-paste fix: a `CLAUDE.md` line, an environment variable, or a `mv` command to archive unused items. Findings are ranked by urgency (impact weighted against observed waste) and rolled up into an A to F setup health grade. Repeat runs classify each finding as new, improving, or resolved against a 48-hour recent window.
 
 You can also open it inline from the dashboard: press `o` when a finding count appears in the status bar, `b` to return.
+
+## Apply fixes, undo anytime
+
+```bash
+codeburn optimize --apply             # review and apply fixes interactively
+codeburn optimize --apply --dry-run   # print the plan, change nothing
+codeburn optimize --apply --yes       # apply every appliable fix without prompting
+codeburn act list                     # every change CodeBurn has made
+codeburn act undo --last              # roll the most recent change back
+codeburn act report                   # realized vs estimated savings
+```
+
+`codeburn optimize` finds the waste; `--apply` fixes the config-class findings for you: settings values, environment variables, archiving unused agents and skills. Every change is backed up and journaled before it lands. `codeburn act list` shows the history and `codeburn act undo <id>` restores the original files (it refuses if the files changed since being applied, unless you pass `--force`).
+
+The loop closes on honesty: once an applied fix is at least 3 days old, `codeburn act report` compares its estimated savings against what your sessions actually did, and later `codeburn optimize` runs show that realized figure in the header. Estimates get checked against reality, not just claimed.
+
+## Guard your budget
+
+```bash
+codeburn guard install            # hooks into this project's .claude/settings.json
+codeburn guard install --global   # or into ~/.claude/settings.json
+codeburn guard status             # caps, install locations, flagged projects
+codeburn guard uninstall          # removes cleanly, leaves your own hooks alone
+```
+
+Guard installs opt-in hooks into Claude Code that watch session cost while you work:
+
+- **Soft cap** (default $5): a one-time in-session warning when a session passes it.
+- **Hard cap** (default $15): stops the session; `codeburn guard allow` lifts it for that session only.
+- **Checkpoint** (default $3): if a session ends past this with no edits and no commits, a nudge suggests starting fresh with a named deliverable.
+- **Session openers**: projects where optimize found waste get a one-line flag at session start.
+
+Caps are edited in `~/.config/codeburn/guard.json` (set a value to `null` to disable it). Add `--statusline` to show session cost in the Claude Code status line. Installs go through the same journal as everything else, so `codeburn act undo` removes them too. Hooks fail open: a broken guard never blocks a session.
 
 ## Compare models
 
@@ -239,6 +277,41 @@ defaults write org.agentseal.codeburn-menubar CodeBurnMenubarCompact -bool true
 
 Relaunch the app to apply. To revert: `defaults delete org.agentseal.codeburn-menubar CodeBurnMenubarCompact`.
 
+**Refresh cadence** is set in Settings under Usage Refresh. Auto (the default) refreshes every 30 seconds on AC power and backs off on battery, in Low Power Mode, and while the display sleeps; fixed 1, 5, or 15 minute cadences and a Manual mode (refresh only when you open the popover or click Refresh Now) are also available. From Terminal:
+
+```bash
+defaults write org.agentseal.codeburn-menubar CodeBurnMenubarRefreshSeconds -int 300
+```
+
+Seconds between refreshes: `60`, `300`, or `900`; `0` is Manual and `-1` is Auto. Takes effect on the next refresh tick, no relaunch needed.
+
+### Linux (GNOME)
+
+Linux gets the same ambient view through a GNOME Shell extension (GNOME 45+): spend in the top panel, period switcher, compact mode, and daily budget alerts. It lives in [`gnome/`](gnome/):
+
+```bash
+git clone https://github.com/getagentseal/codeburn && cd codeburn/gnome
+./install.sh
+gnome-extensions enable codeburn@codeburn.dev
+```
+
+See [gnome/README.md](gnome/README.md) for settings and development notes. On Windows, `codeburn web` is the always-on view for now.
+
+## CodeBurn in your agent (MCP)
+
+```bash
+claude mcp add codeburn -- npx -y codeburn mcp
+```
+
+`codeburn mcp` runs a local MCP server over stdio, so Claude Code, Cursor, or any MCP client can ask "where did my tokens go this week?" or "how do I spend less?" mid-conversation. It exposes two tools:
+
+| Tool | What it returns |
+|------|-----------------|
+| `get_usage` | Spend and usage with breakdowns by tool, model, project, and task (fast) |
+| `get_savings` | Cost reductions: waste findings, retry tax, routing waste (slower, deeper analysis) |
+
+Everything is read from local disk, same as the CLI. Project names are pseudonymized by default; the agent only sees real names if it asks with `include_project_names: true`. For other MCP clients, configure a stdio server with command `npx` and args `-y codeburn mcp`.
+
 ## Supported tools
 
 CodeBurn auto-detects which AI tools you use. Each logo links to its provider doc.
@@ -265,6 +338,7 @@ CodeBurn auto-detects which AI tools you use. Each logo links to its provider do
   <a href="docs/providers/kilo-code.md" title="KiloCode"><img src="assets/providers/kilo-code.png" alt="KiloCode" height="34" /></a>
   <a href="docs/providers/qwen.md" title="Qwen"><img src="assets/providers/qwen.png" alt="Qwen" height="34" /></a>
   <a href="docs/providers/kimi.md" title="Kimi Code CLI"><img src="assets/providers/kimi.svg" alt="Kimi Code CLI" height="34" /></a>
+  <a href="docs/providers/lingtai-tui.md" title="LingTai TUI">LingTai TUI</a>
   <a href="docs/providers/goose.md" title="Goose"><img src="assets/providers/goose.png" alt="Goose" height="34" /></a>
   <a href="docs/providers/antigravity.md" title="Antigravity"><img src="assets/providers/antigravity.png" alt="Antigravity" height="34" /></a>
   <a href="docs/providers/crush.md" title="Crush"><img src="assets/providers/crush.png" alt="Crush" height="34" /></a>
@@ -337,6 +411,19 @@ Run `codeburn` for the dashboard, or use a subcommand below. Most commands also 
 | `codeburn compare` | Side-by-side model comparison |
 | `codeburn yield` | Productive vs reverted/abandoned spend, correlated against git |
 | `codeburn yield -p 30days` | Yield analysis for the last 30 days |
+
+**Fix & control**
+
+| Command | What it does |
+|---------|--------------|
+| `codeburn optimize --apply` | Interactively apply config-class fixes (`--yes`, `--dry-run`, `--only <ids>`) |
+| `codeburn act list` | Every change CodeBurn has applied, newest first |
+| `codeburn act undo <id>` | Roll a change back (`--last` for the most recent, `--force` if files drifted) |
+| `codeburn act report` | Realized vs estimated savings for applied fixes |
+| `codeburn guard install` | Budget-cap hooks for Claude Code (`--global`, `--statusline`) |
+| `codeburn guard status` | Show caps, install locations, and flagged projects |
+| `codeburn guard allow` | Lift the hard cap for the current session |
+| `codeburn mcp` | MCP server (stdio) exposing usage and savings to AI agents |
 
 **Models**
 
@@ -430,6 +517,16 @@ codeburn model-alias --remove "my-proxy-model"             # remove alias
 
 Aliases are stored in `~/.config/codeburn/config.json` and applied at runtime before pricing lookup. The target name can be anything in the [LiteLLM model list](https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json) or a canonical name from the fallback table (e.g. `claude-sonnet-4-6`, `claude-opus-4-5`, `gpt-4o`). Built-in aliases ship for known proxy model name variants. User-configured aliases take precedence over built-ins.
 
+### Local Models, Custom Prices, and Proxies
+
+```bash
+codeburn price-override my-model --input 0.27 --output 1.10   # USD per 1M tokens
+codeburn model-savings "llama3.1:8b" gpt-4o                   # local model, counted as savings
+codeburn proxy-path ~/work/copilot-repo                       # subscription-covered project
+```
+
+`price-override` sets exact rates for any model (input, output, cache read, cache creation), useful for private deployments or models LiteLLM prices wrong. `model-savings` maps a free local model to a paid baseline: the local calls stay $0, and the dashboard shows what the same tokens would have cost on the baseline. `proxy-path` marks a project routed through a subscription-backed proxy (e.g. Claude Code over GitHub Copilot), so its API-rate cost is reported as subscription-covered and your net out-of-pocket stays honest. All three support `--list` and `--remove`.
+
 ### Filtering
 
 ```bash
@@ -520,6 +617,7 @@ These are starting points, not verdicts. A 60% cache hit on a single experimenta
 | **Cline / Roo Code / KiloCode** | VS Code `globalStorage`: Cline at `saoudrizwan.claude-dev` and `~/.cline/data`; Roo Code and KiloCode across VS Code, VS Code Insiders, and VSCodium | Cline-family agents. CodeBurn reads `ui_messages.json` from each task directory, extracting token counts from `type: "say"` entries with `say: "api_req_started"`. |
 | **IBM Bob** | `User/globalStorage/ibm.bob-code/tasks/<task-id>/` (GA `IBM Bob` and preview `Bob-IDE` app folders) | Reads `ui_messages.json` for API request token/cost records and `api_conversation_history.json` for the selected model. |
 | **Kimi Code CLI** | `$KIMI_SHARE_DIR/sessions/<workdir-hash>/<session-id>/` or `~/.kimi/sessions/<workdir-hash>/<session-id>/` | Reads `wire.jsonl` `StatusUpdate.token_usage` records, mapping `input_other`, `input_cache_read`, `input_cache_creation`, and `output` into the standard token columns; includes subagents under each session's `subagents/` folder. |
+| **LingTai TUI** | `~/.lingtai/<agent>/logs/token_ledger.jsonl` plus project homes from `~/.lingtai-tui/registry.jsonl` (`<project>/.lingtai/<agent>/logs/token_ledger.jsonl`); honors `LINGTAI_HOME` / `LINGTAI_TUI_HOME` | Reads LingTai's append-only token ledger, mapping `input - cached` to fresh input, `cached` to cache reads, `output` to output, and `thinking` to reasoning. Nested daemon ledgers are skipped because parent ledgers already mirror daemon usage with `source`/`run_id` tags. |
 | **Vercel AI Gateway** | [Vercel AI Gateway reporting API](https://vercel.com/docs/ai-gateway/capabilities/custom-reporting) (cloud, not local logs) | Set `AI_GATEWAY_API_KEY` or `VERCEL_OIDC_TOKEN` (from `vercel env pull` / `vercel dev`); requires a Vercel plan with Custom Reporting. Without credentials it's skipped silently in the combined dashboard. |
 
 CodeBurn deduplicates messages (by API message ID for Claude, by cumulative token cross-check for Codex, by conversation/timestamp for Cursor, by session ID for Gemini, by session+message ID for OpenCode, by responseId for Pi/OMP, by chat folder + message ID for Codebuff, by session+message ID for Kimi), filters by date range per entry, and classifies each turn.
@@ -540,6 +638,9 @@ CodeBurn deduplicates messages (by API message ID for Claude, by cumulative toke
 | `FACTORY_DIR` | Override Droid data directory (default: `~/.factory`) |
 | `KIMI_SHARE_DIR` | Override Kimi Code CLI share directory (default: `~/.kimi`) |
 | `KIMI_MODEL_NAME` | Override Kimi model name when Kimi sessions do not record the model |
+| `LINGTAI_HOME` | Override LingTai data directory (default: `~/.lingtai`) |
+| `LINGTAI_TUI_HOME` | Alternate override for LingTai data directory; `LINGTAI_HOME` takes precedence |
+| `LINGTAI_TUI_GLOBAL_DIR` | Override LingTai TUI global directory used for project registry discovery (default: `~/.lingtai-tui`) |
 | `QWEN_DATA_DIR` | Override Qwen data directory (default: `~/.qwen/projects`) |
 | `VIBE_HOME` | Override Mistral Vibe home directory (default: `~/.vibe`) |
 | `WARP_DB_PATH` | Override Warp database path (default: Warp Stable, then Warp Preview) |
