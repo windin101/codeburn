@@ -119,7 +119,7 @@ ColumnLayout {
         id: insightStack
         currentIndex: insightSwitcher.currentIndex
         Layout.fillWidth: true
-        Layout.preferredHeight: Math.max(115, Kirigami.Theme.defaultFont.pointSize * 9.5)
+        Layout.preferredHeight: Math.max(173, Kirigami.Theme.defaultFont.pointSize * 14.25)
 
         Item {
             id: trendView
