@@ -10,6 +10,7 @@ Item {
     property var model: []
     property int currentIndex: 0
     property var colors: ({})
+    property color highlightColor: Kirigami.Theme.isDarkMode ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(255, 255, 255, 0.85)
 
     signal indexSelected(int index)
 
@@ -27,7 +28,7 @@ Item {
         height: parent.height - 4
         width: (control.width - 4) / Math.max(1, control.model.length)
         x: 2 + control.currentIndex * width
-        color: Kirigami.Theme.isDarkMode ? Qt.rgba(1, 1, 1, 0.15) : Qt.rgba(255, 255, 255, 0.85)
+        color: control.highlightColor
         radius: 5
         border.color: Kirigami.Theme.isDarkMode ? Qt.rgba(255, 255, 255, 0.1) : Qt.rgba(0, 0, 0, 0.05)
         border.width: 1

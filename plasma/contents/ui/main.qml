@@ -514,6 +514,7 @@ PlasmoidItem {
                             return 4;
                         }
                         colors: root.colors
+                        highlightColor: "#36454F"
                         onIndexSelected: (index) => {
                             var mapping = ["today", "week", "30days", "month", "all"];
                             root.activePeriod = mapping[index];
