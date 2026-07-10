@@ -588,7 +588,7 @@ PlasmoidItem {
                 // Manual refresh button
                 Button {
                     text: "⟳"
-                    implicitHeight: 28
+                    Layout.preferredHeight: 28
                     enabled: !root.isFetching
                     onClicked: {
                         root.checkCacheAndFetch(true, true);
@@ -598,7 +598,7 @@ PlasmoidItem {
                 // Launch CLI button
                 Button {
                     text: "Full Report"
-                    implicitHeight: 28
+                    Layout.preferredHeight: 28
                     
                     background: Rectangle {
                         color: parent.down ? Qt.darker(root.colors.brandAccent, 1.2) : (parent.hovered ? Qt.lighter(root.colors.brandAccent, 1.1) : root.colors.brandAccent)
@@ -606,7 +606,9 @@ PlasmoidItem {
                     }
                     contentItem: Text {
                         text: parent.text
-                        font: parent.font
+                        font.family: parent.font.family
+                        font.pointSize: parent.font.pointSize
+                        font.bold: false
                         color: "#FFFFFF"
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -639,7 +641,7 @@ PlasmoidItem {
                 // Settings button
                 Button {
                     text: "⚙️"
-                    implicitHeight: 28
+                    Layout.preferredHeight: 28
                     onClicked: {
                         plasmoid.internalAction("configure").trigger();
                         root.checkCacheAndFetch(true, true);
