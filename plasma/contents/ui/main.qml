@@ -403,11 +403,23 @@ PlasmoidItem {
                     fillMode: Image.PreserveAspectFit
                 }
 
-                Text {
-                    text: "CodeBurn"
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize + 3
-                    font.bold: true
-                    color: root.colors.textColor
+                Row {
+                    Layout.alignment: Qt.AlignVCenter
+                    spacing: 0
+
+                    Text {
+                        text: "Code"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 3
+                        font.bold: true
+                        color: root.colors.textColor
+                    }
+
+                    Text {
+                        text: "Burn"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 3
+                        font.bold: true
+                        color: root.colors.brandAccent
+                    }
                 }
 
                 Item { Layout.fillWidth: true }
