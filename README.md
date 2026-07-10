@@ -239,6 +239,22 @@ defaults write org.agentseal.codeburn-menubar CodeBurnMenubarCompact -bool true
 
 Relaunch the app to apply. To revert: `defaults delete org.agentseal.codeburn-menubar CodeBurnMenubarCompact`.
 
+## Linux (KDE Plasma)
+
+```bash
+bash plasma/install.sh
+```
+
+One script: installs the CodeBurn Plasma widget into `~/.local/share/plasma/plasmoids/` and reloads the Plasma shell. Re-run it anytime to upgrade. The native QML and Kirigami widget lives in `plasma/`.
+
+The widget can be added to your panel or desktop, showing your Hero Spend for the active period. Clicking it expands a fully-featured dashboard featuring:
+- **Scope Toggles**: Switch between Local Spend and Combined device usage.
+- **Provider Filtering**: Filter insights by specific tools (Claude, Cursor, Gemini, etc.) using stylish flat tabs.
+- **Insights Switcher**: Pivot between Trend, Calendar, Stats, and Optimize views.
+- **Quick Actions**: A unified footer featuring a manual Refresh button, Settings, and a "Full Report" button to spawn the CLI.
+
+The widget intelligently caches data and fetches in the background to keep your spend metrics fresh.
+
 ## Supported tools
 
 CodeBurn auto-detects which AI tools you use. Each logo links to its provider doc.
