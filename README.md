@@ -20,6 +20,8 @@
 
 **CodeBurn is a free, open-source, local-first tool that tracks AI coding token usage and cost across 31 tools and agents (Claude Code, Cursor, Codex, Gemini, Grok and more), broken down by model, project, and task.**
 
+> **Note:** This fork is implementing a KDE Plasma port of the menubar app.
+
 You pay for Claude, Codex, Cursor, and a stack of other AI tools. The bill tells you the total. It never tells you that half of it went to conversation instead of code, or that an expensive model burned your budget on work a cheaper one would have one-shot.
 
 CodeBurn does. It reads the session files your tools already write to disk and breaks down every token and dollar by **task, model, tool, and project**, across **32 AI tools**.
@@ -274,6 +276,57 @@ defaults write org.agentseal.codeburn-menubar CodeBurnMenubarCompact -bool true
 ```
 
 Relaunch the app to apply. To revert: `defaults delete org.agentseal.codeburn-menubar CodeBurnMenubarCompact`.
+
+**Refresh cadence** is set in Settings under Usage Refresh. Auto (the default) refreshes every 30 seconds on AC power and backs off on battery, in Low Power Mode, and while the display sleeps; fixed 1, 5, or 15 minute cadences and a Manual mode (refresh only when you open the popover or click Refresh Now) are also available. From Terminal:
+
+```bash
+defaults write org.agentseal.codeburn-menubar CodeBurnMenubarRefreshSeconds -int 300
+```
+
+Seconds between refreshes: `60`, `300`, or `900`; `0` is Manual and `-1` is Auto. Takes effect on the next refresh tick, no relaunch needed.
+
+### Linux (GNOME)
+
+Linux gets the same ambient view through a GNOME Shell extension (GNOME 45+): spend in the top panel, period switcher, compact mode, and daily budget alerts. It lives in [`gnome/`](gnome/):
+
+```bash
+git clone https://github.com/getagentseal/codeburn && cd codeburn/gnome
+./install.sh
+gnome-extensions enable codeburn@codeburn.dev
+```
+
+See [gnome/README.md](gnome/README.md) for settings and development notes. On Windows, `codeburn web` is the always-on view for now.
+
+### Linux (KDE Plasma)
+
+```bash
+bash plasma/install.sh
+```
+
+One script: installs the CodeBurn Plasma widget into `~/.local/share/plasma/plasmoids/` and reloads the Plasma shell. Re-run it anytime to upgrade. The native QML and Kirigami widget lives in `plasma/`.
+
+The widget can be added to your panel or desktop, showing your Hero Spend for the active period. Clicking it expands a fully-featured dashboard featuring:
+- **Scope Toggles**: Switch between Local Spend and Combined device usage.
+- **Provider Filtering**: Filter insights by specific tools (Claude, Cursor, Gemini, etc.) using stylish flat tabs.
+- **Insights Switcher**: Pivot between Trend, Calendar, Stats, and Optimize views.
+- **Quick Actions**: A unified footer featuring a manual Refresh button, Settings, and a "Full Report" button to spawn the CLI.
+
+The widget intelligently caches data and fetches in the background to keep your spend metrics fresh.
+
+## CodeBurn in your agent (MCP)
+
+```bash
+claude mcp add codeburn -- npx -y codeburn mcp
+```
+
+`codeburn mcp` runs a local MCP server over stdio, so Claude Code, Cursor, or any MCP client can ask "where did my tokens go this week?" or "how do I spend less?" mid-conversation. It exposes two tools:
+
+| Tool | What it returns |
+|------|-----------------|
+| `get_usage` | Spend and usage with breakdowns by tool, model, project, and task (fast) |
+| `get_savings` | Cost reductions: waste findings, retry tax, routing waste (slower, deeper analysis) |
+
+Everything is read from local disk, same as the CLI. Project names are pseudonymized by default; the agent only sees real names if it asks with `include_project_names: true`. For other MCP clients, configure a stdio server with command `npx` and args `-y codeburn mcp`.
 
 ## Supported tools
 
