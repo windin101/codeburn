@@ -109,45 +109,6 @@ ColumnLayout {
         return t.toLocaleString() + " tokens";
     }
 
-    // Token volume info + Days/Weeks/Months switcher (shown only when Trend tab is active)
-    RowLayout {
-        visible: root.bucketedTrendData.length > 0
-        Layout.fillWidth: true
-        spacing: 12
-        Layout.bottomMargin: 2
-
-        Column {
-            spacing: 0
-            Text {
-                text: {
-                    if (trendPeriodSwitcher.currentIndex === 0) return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Day" : " Days");
-                    if (trendPeriodSwitcher.currentIndex === 1) return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Week" : " Weeks");
-                    return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Month" : " Months");
-                }
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize - 2
-                color: Kirigami.Theme.textColor
-                opacity: 0.6
-            }
-            Text {
-                text: root.formatTokens(root.getTotalTokens())
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize + 1
-                font.bold: true
-                color: Kirigami.Theme.textColor
-                opacity: 0.8
-            }
-        }
-
-        Item { Layout.fillWidth: true }
-
-        SegmentedControl {
-            id: trendPeriodSwitcher
-            width: 180
-            implicitHeight: Math.max(22, Kirigami.Theme.defaultFont.pointSize * 2)
-            model: ["Days", "Weeks", "Months"]
-            colors: root.colors
-        }
-    }
-
     SegmentedControl {
         id: insightSwitcher
         model: ["Trend", "Calendar", "Stats", "Optimize"]
@@ -164,6 +125,48 @@ ColumnLayout {
             id: trendView
             Layout.fillWidth: true
             Layout.fillHeight: true
+
+            Row {
+                visible: root.bucketedTrendData.length > 0
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.leftMargin: 4
+                anchors.topMargin: 4
+                spacing: 12
+                z: 10
+
+                Column {
+                    spacing: 0
+                    anchors.verticalCenter: parent.verticalCenter
+                    Text {
+                        text: {
+                            if (trendPeriodSwitcher.currentIndex === 0) return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Day" : " Days");
+                            if (trendPeriodSwitcher.currentIndex === 1) return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Week" : " Weeks");
+                            return root.bucketedTrendData.length + (root.bucketedTrendData.length === 1 ? " Month" : " Months");
+                        }
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize - 2
+                        color: Kirigami.Theme.textColor
+                        opacity: 0.6
+                    }
+                    Text {
+                        text: root.formatTokens(root.getTotalTokens())
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 1
+                        font.bold: true
+                        color: Kirigami.Theme.textColor
+                        opacity: 0.8
+                    }
+                }
+
+                SegmentedControl {
+                    id: trendPeriodSwitcher
+                    width: 180
+                    implicitHeight: Math.max(22, Kirigami.Theme.defaultFont.pointSize * 2)
+                    anchors.verticalCenter: parent.verticalCenter
+                    model: ["Days", "Weeks", "Months"]
+                    colors: root.colors
+                }
+            }
 
             Text {
                 visible: root.historyData.length === 0
