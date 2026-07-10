@@ -1,46 +1,52 @@
 # CodeBurn KDE Plasma Widget
 
-This directory contains the KDE Plasma 6 widget (Plasmoid) port of the CodeBurn macOS menubar app. The widget reproduces the core features, interactivity, and design aesthetics of the native macOS app directly on your KDE desktop.
+A beautifully native, highly integrated KDE Plasma 6 widget (Plasmoid) port of the CodeBurn macOS menubar app. This widget brings comprehensive AI coding spend tracking directly to your Linux desktop panel, matching the core features, interactivity, and design aesthetics of the macOS app while natively embracing the KDE Plasma environment.
 
-## Overview
+## What it does
 
-The CodeBurn Plasma widget provides a compact and full representation of your AI spending across 31 tools and agents. 
+The CodeBurn Plasma widget provides a real-time, zero-friction window into your AI API costs across 31+ tools (like Claude Code, Cursor, Codex, Gemini, etc).
 
-- **Compact Representation:** A panel or system tray icon showing your active spend. The text will turn a warning color if you exceed your daily budget.
-- **Full Representation:** A popover dialog that provides detailed insights and breakdowns.
-- **Live Data:** It communicates directly with the local `codeburn` CLI binary (with a 30s TTL memory cache to prevent duplicate loads) and fetches live exchange rates from the Frankfurter API to localize cost metrics automatically.
+- **Ambient Spend Tracking:** Sits quietly in your panel or system tray, displaying your active spend for the period (e.g., Today, Month, Week). If you exceed your configured daily budget, the text turns a warning color so you know immediately.
+- **Full Interactive Dashboard:** Clicking the widget opens a rich popover containing:
+  - **Scope & Period Toggles:** Pivot between Local machine spend vs Combined multi-device spend, and shift periods (Today, 7 Days, 30 Days, Month, All).
+  - **Agent Tab Strip:** A horizontally scrolling, stylish tab bar filtering your spend by individual AI tools.
+  - **Insights Switcher:** Toggle between an interactive Trend Bar Chart, a GitHub-style Calendar Heatmap, detailed Stats, and automated Optimize findings.
+  - **Granular Breakdowns:** Tables displaying your top Models and top Activities/Projects by spend.
+- **Live Localized Data:** Communicates directly with the local `codeburn` CLI binary via background async tasks. It pulls real-time exchange rates (via Frankfurter API) to convert USD costs into your local currency seamlessly.
 
-## Files and Structure
+## How it's built
 
-The Plasmoid is built using QML and structured as follows:
+Built entirely with native KDE technologies to ensure a first-class Linux desktop experience:
 
-### Metadata & Configuration
-- **`metadata.json`**: Declares the Plasma 6 applet with package properties, target API version, and points to the main QML file.
-- **`contents/config/main.xml`**: Defines the persistent configuration schema for settings like currency, display metrics, periods, daily budgets, and the `codeburn` binary path.
+- **QML & Kirigami:** The interface is constructed using standard Qt Quick (QML) and KDE Kirigami frameworks, ensuring smooth animations and proper layout management.
+- **Native Theming:** The widget respects your system's global theme. It automatically adapts to Light/Dark modes, allows the blurred desktop panel to show through, uses the system default font scaling, and cleverly maps its highlights to your active system accent color (e.g. `Kirigami.Theme.highlightColor`).
+- **Performance First:** It relies on a 30-second TTL memory cache to prevent duplicate CLI spawns. Background shell execution (`codeburn payload`) prevents the UI thread from ever blocking, keeping your Plasma shell snappy.
 
-### Design System
-- **`contents/ui/theme.js`**: Contains design tokens for the terracotta-ember color palette, including light and dark theme mappings.
+### Project Structure
+- **`metadata.json`**: Declares the Plasma 6 applet properties and points to the main entry point.
+- **`contents/config/main.xml`**: Defines the persistent settings schema (Currency, Budget, Default Period).
+- **`contents/ui/main.qml`**: The core applet router handling state, background fetching, and the top-level layout.
+- **`contents/ui/*.qml`**: Modular UI components (`HeroSection.qml`, `HeatmapSection.qml`, `AgentTabStrip.qml`, etc.) that cleanly separate the different dashboard panels.
+- **`contents/ui/configGeneral.qml`**: The graphical settings panel accessible via right-click > Configure CodeBurn.
 
-### Main Applet & Layout
-- **`contents/ui/main.qml`**: The main applet handling the compact/full representations and data fetching.
-- **`contents/ui/HeroSection.qml`**: Displays the large hero amount, token breakdown, sessions/calls counts, daily budget warnings, local model savings, and combined device breakdown list.
-- **`contents/ui/SegmentedControl.qml`**: Custom-styled segmented pill-switchers for Scope, Period, and Chart visualization modes.
-- **`contents/ui/AgentTabStrip.qml`**: A horizontally scrolling tab bar showing individual AI tools and their costs.
-- **`contents/ui/HeatmapSection.qml`**: Provides different insight views, including an interactive trend bar chart, a calendar contribution grid, and stats/optimization summaries.
-- **`contents/ui/ModelsSection.qml`**: Displays the top models table.
-- **`contents/ui/ActivitySection.qml`**: Displays the top activities table.
-- **`contents/ui/ToolingSection.qml`**: Collapsible/tabbed lists of tools, skills, subagents, and MCP server calls.
-- **`contents/ui/FindingsSection.qml`**: Displays optimization findings.
+## How to install it
 
-### Settings UI & Installer
-- **`contents/ui/configGeneral.qml`**: Integrated configuration dialog for the Plasmoid settings.
-- **`install.sh`**: Executable bash installer to register, build, and upgrade the widget in `~/.local/share/plasma/plasmoids/org.codeburn.plasma` and reload the Plasma configuration.
+### Prerequisites
+1. You must be running **KDE Plasma 6**.
+2. You must have the [CodeBurn CLI](https://github.com/getagentseal/codeburn) installed and available in your `$PATH`.
 
-## UX and Rendering
+### Installation
 
-The widget is designed to integrate seamlessly with the KDE Plasma 6 environment:
-- Uses native Plasma styling, letting the blurred, themed popover frame show through.
-- Dynamic sizing and layout scaling using relative point sizes based on the Plasma theme default font.
-- Uses native Plasma theme text colors to blend perfectly with the active color scheme.
-- Uses explicit baseline alignment constraints for perfect typography rendering.
-- Features a custom QML image element loading the native CodeBurn `menu-logo.png` asset.
+We provide a convenient one-shot bash script that automatically packages the widget, registers it with Plasma, and reloads your shell so it appears immediately:
+
+```bash
+cd codeburn/plasma
+bash install.sh
+```
+
+### Usage
+1. Right-click on your Plasma panel or desktop and select **Add Widgets...**
+2. Search for **CodeBurn** and drag it onto your panel or desktop.
+3. (Optional) Right-click the widget and select **Configure CodeBurn...** to set your preferred local currency, daily budget warning threshold, or default display period.
+
+To upgrade the widget in the future after pulling new code, simply re-run `bash install.sh`!
