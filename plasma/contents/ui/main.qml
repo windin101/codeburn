@@ -420,19 +420,6 @@ PlasmoidItem {
 
             Kirigami.Separator { Layout.fillWidth: true; Layout.bottomMargin: 8 }
 
-            // Scope Selector
-            SegmentedControl {
-                id: scopeSelector
-                model: ["Local", "Combined"]
-                currentIndex: root.activeScope === "combined" ? 1 : 0
-                colors: root.colors
-                Layout.bottomMargin: 8
-                onIndexSelected: (index) => {
-                    root.activeScope = index === 1 ? "combined" : "local";
-                    root.checkCacheAndFetch(false, false);
-                }
-            }
-
             // Period Selector
             SegmentedControl {
                 id: periodSelector
@@ -445,10 +432,23 @@ PlasmoidItem {
                     return 4;
                 }
                 colors: root.colors
-                Layout.bottomMargin: 10
+                Layout.bottomMargin: 8
                 onIndexSelected: (index) => {
                     var mapping = ["today", "week", "30days", "month", "all"];
                     root.activePeriod = mapping[index];
+                    root.checkCacheAndFetch(false, false);
+                }
+            }
+
+            // Scope Selector
+            SegmentedControl {
+                id: scopeSelector
+                model: ["Local", "Combined"]
+                currentIndex: root.activeScope === "combined" ? 1 : 0
+                colors: root.colors
+                Layout.bottomMargin: 10
+                onIndexSelected: (index) => {
+                    root.activeScope = index === 1 ? "combined" : "local";
                     root.checkCacheAndFetch(false, false);
                 }
             }
