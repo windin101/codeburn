@@ -101,6 +101,21 @@ body { overflow: hidden; background: var(--bg); color: var(--ink); }
 /* Use the real OS window controls, not the wireframe's fake traffic-light dots. */
 .lights { display: none; }
 .sb { padding-top: 12px; }
+
+/* macOS integrated title bar (hiddenInset): clear the traffic lights and make
+   the top chrome draggable, keeping interactive controls clickable. */
+:root[data-platform='darwin'] .sb { padding-top: 34px; -webkit-app-region: drag; }
+:root[data-platform='darwin'] .bar { -webkit-app-region: drag; }
+:root[data-platform='darwin'] .sb .ni,
+:root[data-platform='darwin'] .sb .status,
+:root[data-platform='darwin'] .sb a,
+:root[data-platform='darwin'] .sb button,
+:root[data-platform='darwin'] .bar .seg,
+:root[data-platform='darwin'] .bar .pop,
+:root[data-platform='darwin'] .bar button,
+:root[data-platform='darwin'] .bar a,
+:root[data-platform='darwin'] .bar input,
+:root[data-platform='darwin'] .bar [role='button'] { -webkit-app-region: no-drag; }
 .app b { background: none; color: var(--accent); filter: none; }
 .ni.on { background: var(--hover); color: var(--t1); box-shadow: none; }
 .ni.on::before { background: var(--accent); }

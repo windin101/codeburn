@@ -150,6 +150,9 @@ function createWindow(): BrowserWindow {
     minWidth: 900,
     minHeight: 600,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0e1013' : '#f5f6f8',
+    // macOS: integrated title bar (traffic lights float over the sidebar), like
+    // Linear/Hermes. Windows/Linux keep their native frame + window controls.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

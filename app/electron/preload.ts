@@ -27,6 +27,7 @@ const bridge = {
   getShareStatus: () => invoke('codeburn:getShareStatus'),
   getIdentity: () => invoke('codeburn:getIdentity'),
   cliStatus: () => invoke('codeburn:cliStatus'),
+  platform: process.platform,
 }
 
 contextBridge.exposeInMainWorld('codeburn', bridge)

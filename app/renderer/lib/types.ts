@@ -363,6 +363,7 @@ export interface CodeburnBridge {
   getOverview(period: Period, provider: string): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>
   getActReport(): Promise<ActReportJson>
+  readonly platform: string
   getModels(period: Period, provider: string, byTask: boolean): Promise<ModelReportRow[]>
   getYield(period: Period): Promise<YieldJsonReport>
   getSpendFlow(period: Period, provider: string): Promise<SpendFlow>
