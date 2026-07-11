@@ -29,6 +29,7 @@ const CHANNELS = [
   'codeburn:getYield',
   'codeburn:getSpendFlow',
   'codeburn:getDevices',
+  'codeburn:getDevicesScan',
   'codeburn:getShareStatus',
   'codeburn:getIdentity',
   'codeburn:cliStatus',
@@ -43,12 +44,13 @@ const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = 
   { channel: 'codeburn:getYield', args: ['today'], argv: ['yield', '--format', 'json', '--period', 'today'] },
   { channel: 'codeburn:getSpendFlow', args: ['month', 'openai'], argv: ['spend', '--format', 'flow-json', '--period', 'month', '--provider', 'openai'] },
   { channel: 'codeburn:getDevices', args: ['week'], argv: ['devices', '--format', 'json', '--period', 'week'] },
+  { channel: 'codeburn:getDevicesScan', args: [], argv: ['devices', 'scan', '--format', 'json'] },
   { channel: 'codeburn:getShareStatus', args: [], argv: ['share', 'status', '--format', 'json'] },
   { channel: 'codeburn:getIdentity', args: [], argv: ['identity', '--format', 'json'] },
 ]
 
 describe('createBridgeHandlers (channel → argv for all channels)', () => {
-  it('exposes exactly the nine codeburn:* channels', () => {
+  it('exposes exactly the ten codeburn:* channels', () => {
     const handlers = createBridgeHandlers({ spawnCli: vi.fn(), resolveCodeburnPath: () => null })
     expect(Object.keys(handlers).sort()).toEqual([...CHANNELS].sort())
   })

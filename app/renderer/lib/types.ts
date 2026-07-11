@@ -357,6 +357,7 @@ export interface CodeburnBridge {
   getYield(period: Period): Promise<YieldJsonReport>
   getSpendFlow(period: Period, provider: string): Promise<SpendFlow>
   getDevices(period: Period): Promise<CombinedUsage>
+  getDevicesScan(): Promise<DeviceScanResult>
   getShareStatus(): Promise<ShareStatus>
   getIdentity(): Promise<Identity>
   cliStatus(): Promise<{ found: boolean; path: string | null; error?: string }>

@@ -53,6 +53,7 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, resolveCodeburnPat
       'spend', '--format', 'flow-json', '--period', period, ...providerArgs(provider),
     ]),
     'codeburn:getDevices': run((period: string) => ['devices', '--format', 'json', '--period', period]),
+    'codeburn:getDevicesScan': run(() => ['devices', 'scan', '--format', 'json']),
     'codeburn:getShareStatus': run(() => ['share', 'status', '--format', 'json']),
     'codeburn:getIdentity': run(() => ['identity', '--format', 'json']),
     'codeburn:cliStatus': async () => {

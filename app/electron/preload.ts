@@ -22,6 +22,7 @@ const bridge = {
   getYield: (period: string) => invoke('codeburn:getYield', period),
   getSpendFlow: (period: string, provider: string) => invoke('codeburn:getSpendFlow', period, provider),
   getDevices: (period: string) => invoke('codeburn:getDevices', period),
+  getDevicesScan: () => invoke('codeburn:getDevicesScan'),
   getShareStatus: () => invoke('codeburn:getShareStatus'),
   getIdentity: () => invoke('codeburn:getIdentity'),
   cliStatus: () => invoke('codeburn:cliStatus'),

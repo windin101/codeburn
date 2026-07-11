@@ -11,6 +11,7 @@ import { Overview } from './sections/Overview'
 import { Optimize } from './sections/Optimize'
 import { Models } from './sections/Models'
 import { Plans } from './sections/Plans'
+import { Settings } from './sections/Settings'
 import { Spend } from './sections/Spend'
 import type { MenubarPayload, Period } from './lib/types'
 
@@ -64,11 +65,13 @@ export function App() {
       <div className="ct">
         {section === 'plans' ? (
           <Plans period={period} />
+        ) : section === 'settings' ? (
+          <Settings period={period} />
         ) : (
           <>
             <TopBar
               title={SECTION_TITLES[section]}
-              scope={section === 'settings' ? undefined : scope}
+              scope={scope}
               period={period}
               onPeriodChange={onPeriodChange}
               providerLabel="All providers"
@@ -88,13 +91,15 @@ export function App() {
             </div>
           </>
         )}
-        <Hint
-          items={[
-            { k: '⌘K', label: 'Command' },
-            { k: '⌘E', label: 'Export view' },
-          ]}
-          right={overview.loading ? 'refreshing…' : 'auto-refresh 30s'}
-        />
+        {section !== 'settings' && (
+          <Hint
+            items={[
+              { k: '⌘K', label: 'Command' },
+              { k: '⌘E', label: 'Export view' },
+            ]}
+            right={overview.loading ? 'refreshing…' : 'auto-refresh 30s'}
+          />
+        )}
       </div>
     </Window>
   )
