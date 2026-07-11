@@ -47,6 +47,25 @@ describe('resolveCodeburnPath (Vite development)', () => {
     expect(resolveCodeburnPath()).toMatch(/dist\/cli\.js$/)
   })
 
+  it('prefers the repo dev CLI over a persisted-path file (stale global) in dev', () => {
+    // A persisted global (e.g. an older Homebrew codeburn) must NOT shadow the
+    // repo build in dev, or newly-added commands break. Regression: 0.9.15
+    // lacked `sessions`, so the persisted path produced a CLI error.
+    delete process.env.CODEBURN_BIN
+    process.env.CODEBURN_PATH_DIRS = ''
+    const persistedTarget = join(dir, 'stale-codeburn')
+    writeFileSync(persistedTarget, '#!/usr/bin/env node\n', { mode: 0o755 })
+    chmodSync(persistedTarget, 0o755)
+    const persistedFile = join(dir, 'cli-path.v1')
+    writeFileSync(persistedFile, persistedTarget)
+    process.env.CODEBURN_CLI_PATH_FILE = persistedFile
+    process.env.VITE_DEV_SERVER_URL = 'http://localhost:5173'
+
+    const resolved = resolveCodeburnPath()
+    expect(resolved).toMatch(/dist\/cli\.js$/)
+    expect(resolved).not.toBe(persistedTarget)
+  })
+
   it('does not return the repo dev CLI outside the Vite dev server', () => {
     delete process.env.CODEBURN_BIN
     process.env.CODEBURN_PATH_DIRS = ''

@@ -97,19 +97,23 @@ function readPersistedPath(): string | null {
 
 /**
  * Resolve the absolute path to the `codeburn` binary, or null if not found.
- * Order: dev override (`CODEBURN_BIN`) → persisted-path file → repo CLI in
- * Vite development → PATH / brew / nvm / volta / asdf → null.
+ * Order: dev override (`CODEBURN_BIN`) → repo CLI in Vite development →
+ * persisted-path file → PATH / brew / nvm / volta / asdf → null.
+ *
+ * The dev repo CLI intentionally beats the persisted-path file: in `npm run
+ * dev` the developer is iterating on this repo, so its freshly-built
+ * `dist/cli.js` must win over a stale globally-installed/persisted binary
+ * (which may lack newly-added commands). Setting `CODEBURN_BIN` still overrides
+ * everything. In production `VITE_DEV_SERVER_URL` is unset, so the persisted
+ * path behaves exactly as before.
  */
 export function resolveCodeburnPath(): string | null {
   const override = process.env.CODEBURN_BIN
   if (override && override.startsWith('/') && isExecutableFile(override)) return override
 
-  const persisted = readPersistedPath()
-  if (persisted) return persisted
-
   // Dev convenience: when launched by the Vite dev server, prefer the repo's own
-  // freshly-built CLI over a stale globally-installed one, so newly-added
-  // commands (sessions/compare/act JSON) work without setting CODEBURN_BIN.
+  // freshly-built CLI over a stale globally-installed/persisted one, so
+  // newly-added commands (sessions/compare/act JSON) work without CODEBURN_BIN.
   if (process.env.VITE_DEV_SERVER_URL) {
     const devBin = join(__dirname, '..', '..', '..', 'dist', 'cli.js')
     if (isExecutableFile(devBin)) return devBin
@@ -118,6 +122,9 @@ export function resolveCodeburnPath(): string | null {
     const sourceDevBin = join(__dirname, '..', '..', 'dist', 'cli.js')
     if (isExecutableFile(sourceDevBin)) return sourceDevBin
   }
+
+  const persisted = readPersistedPath()
+  if (persisted) return persisted
 
   for (const bin of searchDirs().map(dir => join(dir, 'codeburn'))) {
     if (isExecutableFile(bin)) return bin
