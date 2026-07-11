@@ -601,6 +601,11 @@ export function OverviewContent({
         <FuelRing status={plans.data} onNavigate={onNavigate} bare />
       </div>
 
+      <div className="ov-card ov-panel ov-chart-widget">
+        <div className="ov-panel-head"><h3>Daily spend</h3><span className="r">{topModel ? `Biggest driver: ${topModel.name}` : 'No model driver yet'}</span></div>
+        <div className="ov-panel-body">{data.history.daily.length ? <DailyChart daily={chartDaily} /> : <EmptyNote>No spend yet.</EmptyNote>}</div>
+      </div>
+
       <div className="ov-insight-band">
         <div className="ov-coach">
           <svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="15 7 21 7 21 13"/></svg>
@@ -641,11 +646,6 @@ export function OverviewContent({
           <div className="ov-card ov-panel ov-activities-widget">
             <div className="ov-panel-head"><h3>Top activities</h3><span className="r">Sorted by cost</span></div>
             <div className="ov-panel-body"><TopActivities activities={data.current.topActivities} /></div>
-          </div>
-
-          <div className="ov-card ov-panel ov-chart-widget">
-            <div className="ov-panel-head"><h3>Daily spend</h3><span className="r">{topModel ? `Biggest driver: ${topModel.name}` : 'No model driver yet'}</span></div>
-            <div className="ov-panel-body">{data.history.daily.length ? <DailyChart daily={chartDaily} /> : <EmptyNote>No spend yet.</EmptyNote>}</div>
           </div>
         </div>
       </div>
