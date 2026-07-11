@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ActReportJson, MenubarPayload, StatusJson } from '../lib/types'
@@ -21,8 +21,8 @@ vi.mock('../lib/ipc', async orig => {
 /**
  * A fully-typed payload anchored to `now` so today/MTD/projected are stable.
  * `history.daily` deliberately spans 30 backfill days (the real CLI emits up to
- * 365 regardless of period) so tests can prove the chart is sliced to the
- * selected period window.
+ * 365 regardless of period) so tests can prove period aggregation while the
+ * trend chart keeps its contiguous 30-day window.
  */
 function makePayload(now: Date): MenubarPayload {
   const DAYS = 30
@@ -43,7 +43,24 @@ function makePayload(now: Date): MenubarPayload {
       outputTokens: 0,
       cacheReadTokens: 0,
       cacheWriteTokens: 0,
-      topModels: [{ name: 'claude-opus-4', cost, savingsUSD: 0, calls: 40, inputTokens: 0, outputTokens: 0 }],
+      topModels: [
+        {
+          name: 'claude-opus-4',
+          cost: cost - 1,
+          savingsUSD: 0,
+          calls: 30,
+          inputTokens: 40_000_000,
+          outputTokens: 2_000_000,
+        },
+        {
+          name: 'claude-haiku-4',
+          cost: 1,
+          savingsUSD: 0,
+          calls: 10,
+          inputTokens: 1_000,
+          outputTokens: 500,
+        },
+      ],
     }
   })
 
@@ -123,14 +140,16 @@ describe('Overview', () => {
     vi.useRealTimers()
   })
 
-  it("renders real hero, plan, saved, session, and daily-chart data", async () => {
+  it("renders real hero, model, plan, saved, session, and daily-chart data", async () => {
     const now = new Date()
     getOverview.mockResolvedValue(makePayload(now))
 
     const { container } = render(<Overview period="30days" provider="all" />)
 
-    // Today card value comes from today's history.daily entry ($6.20).
-    expect(await screen.findByText('$6.20')).toBeInTheDocument()
+    // The hero shows the SELECTED PERIOD's total (current.cost) + label, not
+    // just today — so a 30-day view reads $312.40 under "Last 30 days".
+    expect(await screen.findByText('$312.40')).toBeInTheDocument()
+    expect(screen.getByText('Last 30 days')).toBeInTheDocument()
     expect(container.querySelector('.ov-streak')).toHaveTextContent('30-day streak')
 
     // Session row title = the session's project (topSessions has no title field).
@@ -146,6 +165,39 @@ describe('Overview', () => {
     expect(bars[29]).toHaveAttribute('data-led', 'claude-opus-4')
     fireEvent.mouseEnter(bars[29], { clientX: 100, clientY: 80 })
     expect(screen.getByText('40 calls · claude-opus-4 led')).toBeInTheDocument()
+    const tooltip = screen.getByRole('tooltip')
+    expect(tooltip.parentElement).toBe(document.body)
+    expect(tooltip).toHaveStyle({ position: 'fixed' })
+
+    // Daily model breakdowns are summed over the selected period and sorted by
+    // cost. Token values use the same compact B/M/K notation as the menubar.
+    const modelsTable = screen.getByRole('table', { name: 'Models this period' })
+    const modelRows = within(modelsTable).getAllByRole('row')
+    expect(modelRows[1]).toHaveTextContent('claude-opus-4')
+    expect(modelRows[1]).toHaveTextContent('1.2B')
+    expect(modelRows[1]).toHaveTextContent('60.0M')
+    expect(modelRows[1]).toHaveTextContent('$171.20')
+    expect(modelRows[1]).toHaveTextContent('900')
+    expect(modelRows[2]).toHaveTextContent('claude-haiku-4')
+    expect(modelRows[2]).toHaveTextContent('30K')
+    expect(modelRows[2]).toHaveTextContent('15K')
+
+    // Weekly labels align to every seventh bar, and all three menubar-style
+    // daily summaries are derived from the displayed 30-day chart window.
+    const ticks = container.querySelectorAll('.ov-xax span')
+    expect(ticks).toHaveLength(5)
+    expect(ticks[0]).toHaveTextContent(new Date(
+      now.getFullYear(), now.getMonth(), now.getDate() - 29,
+    ).toLocaleString('en-US', { month: 'short', day: 'numeric' }))
+    const summaries = screen.getByLabelText('Daily spend summary')
+    expect(within(summaries).getByText('Avg/day')).toBeInTheDocument()
+    expect(within(summaries).getByText('$6.71')).toBeInTheDocument()
+    expect(within(summaries).getByText('Peak')).toBeInTheDocument()
+    expect(within(summaries).getByText(/\$32\.00 · \d{1,2}\/\d{1,2}/)).toBeInTheDocument()
+    expect(within(summaries).getByText('Yesterday')).toBeInTheDocument()
+    expect(within(summaries).getByText('$5.00')).toBeInTheDocument()
+
+    expect(container.querySelector('.ov-spark')).not.toBeInTheDocument()
 
     expect(screen.getByText('82%')).toBeInTheDocument()
     expect(screen.getByText('$84.20')).toBeInTheDocument()

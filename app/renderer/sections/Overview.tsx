@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { ListRow, seriesColorForModel } from '../components/ListRow'
@@ -133,31 +134,6 @@ function CountUp({ value }: { value: number }) {
   return <div ref={ref} className="ov-hero-num" data-countup={value}>{formatUsd(value)}</div>
 }
 
-function Sparkline({ values, ok = false, hero = false }: { values: number[]; ok?: boolean; hero?: boolean }) {
-  const width = hero ? 240 : 120
-  const height = hero ? 44 : 26
-  const lineBottom = hero ? 38 : 24
-  const max = Math.max(...values, 0)
-  const points = (values.length ? values : [0]).map((value, index, all) => {
-    const x = all.length === 1 ? width : (index / (all.length - 1)) * width
-    const y = max > 0 ? lineBottom - (value / max) * (lineBottom - 5) : lineBottom
-    return [x, y] as const
-  })
-  const pointString = points.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')
-  const area = `0,${height} ${pointString} ${width},${height}`
-  const last = points[points.length - 1]
-
-  return (
-    <div className={`ov-spark${ok ? ' ov-spark-ok' : ''}`}>
-      <svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
-        <polygon points={area} />
-        <polyline points={pointString} vectorEffect="non-scaling-stroke" />
-        {hero && <line className="dot" x1={last[0]} y1={last[1]} x2={last[0]} y2={last[1] - 0.1} vectorEffect="non-scaling-stroke" />}
-      </svg>
-    </div>
-  )
-}
-
 function planSummaries(status: StatusJson | null): JsonPlanSummary[] {
   if (!status) return []
   const plans = Object.values(status.plans ?? {}).filter((plan): plan is JsonPlanSummary => Boolean(plan))
@@ -216,16 +192,115 @@ function formatDay(date: string): string {
   return new Date(year, month - 1, day).toLocaleString('en-US', { month: 'short', day: 'numeric' })
 }
 
+function formatShortDay(date: string): string {
+  const [, month, day] = date.split('-').map(Number)
+  return `${month}/${day}`
+}
+
+function formatTokens(value: number): string {
+  if (value >= 1e9) return `${(value / 1e9).toFixed(1)}B`
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`
+  if (value >= 1e3) return `${(value / 1e3).toFixed(0)}K`
+  return String(Math.round(value))
+}
+
+type AggregatedModel = {
+  name: string
+  cost: number
+  calls: number
+  inputTokens: number
+  outputTokens: number
+}
+
+function aggregateModels(daily: DailyHistoryEntry[]): AggregatedModel[] {
+  const byName = new Map<string, AggregatedModel>()
+  for (const day of daily) {
+    for (const model of day.topModels) {
+      const row = byName.get(model.name) ?? {
+        name: model.name,
+        cost: 0,
+        calls: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+      }
+      row.cost += model.cost
+      row.calls += model.calls
+      row.inputTokens += model.inputTokens
+      row.outputTokens += model.outputTokens
+      byName.set(model.name, row)
+    }
+  }
+  return [...byName.values()].sort((a, b) => b.cost - a.cost)
+}
+
+function ModelsTable({ models }: { models: AggregatedModel[] }) {
+  if (!models.length) return <EmptyNote>No model usage in this range yet.</EmptyNote>
+  const maxCost = models[0].cost
+
+  return (
+    <div className="ov-model-scroll">
+      <table className="ov-models" aria-label="Models this period">
+        <thead>
+          <tr>
+            <th className="ov-model-bar-head" aria-label="Relative cost" />
+            <th>Model</th>
+            <th className="num">Input tok</th>
+            <th className="num">Output tok</th>
+            <th className="num">Cost</th>
+            <th className="num">Calls</th>
+          </tr>
+        </thead>
+        <tbody>
+          {models.map(model => (
+            <tr key={model.name}>
+              <td className="ov-model-bar-cell">
+                <span className="ov-model-bar" style={{ width: `${maxCost > 0 ? model.cost / maxCost * 100 : 0}%` }} />
+              </td>
+              <td className="ov-model-name">{model.name}</td>
+              <td className="num mono">{formatTokens(model.inputTokens)}</td>
+              <td className="num mono">{formatTokens(model.outputTokens)}</td>
+              <td className="num mono">{formatUsd(model.cost)}</td>
+              <td className="num">{model.calls.toLocaleString('en-US')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function DailyChart({ daily }: { daily: DailyHistoryEntry[] }) {
   const max = Math.max(...daily.map(day => day.cost), 0)
   const peakIndex = daily.reduce((peak, day, index) => day.cost > (daily[peak]?.cost ?? -1) ? index : peak, 0)
-  const [tip, setTip] = useState<{ day: DailyHistoryEntry; left: number; top: number } | null>(null)
-  const chartRef = useRef<HTMLDivElement>(null)
-  const labels = daily.length ? [daily[0], daily[Math.floor((daily.length - 1) / 2)], daily[daily.length - 1]] : []
+  const peak = daily[peakIndex]
+  const yesterday = daily.at(-2)
+  const average = mean(daily.map(day => day.cost))
+  const ticks = daily.filter((_, index) => index % 7 === 0)
+  const [tip, setTip] = useState<{ day: DailyHistoryEntry; x: number; y: number } | null>(null)
+  const [tipPosition, setTipPosition] = useState<{ left: number; top: number } | null>(null)
+  const tipRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    if (!tip) {
+      setTipPosition(null)
+      return
+    }
+    const width = tipRef.current?.offsetWidth ?? 220
+    const height = tipRef.current?.offsetHeight ?? 62
+    const gutter = 8
+    const cursorGap = 12
+    let left = tip.x + cursorGap
+    if (left + width > window.innerWidth - gutter) left = tip.x - width - cursorGap
+    left = Math.max(gutter, Math.min(left, window.innerWidth - width - gutter))
+    let top = tip.y - height - cursorGap
+    if (top < gutter) top = tip.y + cursorGap
+    top = Math.max(gutter, Math.min(top, window.innerHeight - height - gutter))
+    setTipPosition({ left, top })
+  }, [tip])
 
   return (
     <>
-      <div className="chart" ref={chartRef}>
+      <div className="chart">
         {daily.map((day, index) => (
           <button
             type="button"
@@ -237,22 +312,36 @@ function DailyChart({ daily }: { daily: DailyHistoryEntry[] }) {
             data-cost={day.cost}
             data-calls={day.calls}
             data-led={day.topModels[0]?.name ?? ''}
-            onMouseEnter={event => {
-              const rect = chartRef.current?.getBoundingClientRect()
-              if (rect) setTip({ day, left: event.clientX - rect.left, top: event.clientY - rect.top - 14 })
-            }}
-            onMouseMove={event => {
-              const rect = chartRef.current?.getBoundingClientRect()
-              if (rect) setTip({ day, left: event.clientX - rect.left, top: event.clientY - rect.top - 14 })
-            }}
+            onMouseEnter={event => setTip({ day, x: event.clientX, y: event.clientY })}
+            onMouseMove={event => setTip({ day, x: event.clientX, y: event.clientY })}
             onMouseLeave={() => setTip(null)}
           />
         ))}
-        <div className={`chart-tip${tip ? ' on' : ''}`} style={tip ? { left: tip.left, top: tip.top } : undefined}>
-          {tip && <><div className="chart-tip-d">{formatDay(tip.day.date)}</div><div className="chart-tip-v">{formatUsd(tip.day.cost)}</div><div className="chart-tip-s">{tip.day.calls} calls · {tip.day.topModels[0]?.name ?? 'No model'} led</div></>}
-        </div>
       </div>
-      <div className="ov-xax">{labels.map((day, index) => <span key={`${day.date}-${index}`}>{formatDay(day.date)}</span>)}</div>
+      <div className="ov-xax">
+        {ticks.map(day => {
+          const index = daily.indexOf(day)
+          return <span key={day.date} style={{ left: `${daily.length > 1 ? index / (daily.length - 1) * 100 : 0}%` }}>{formatDay(day.date)}</span>
+        })}
+      </div>
+      <div className="ov-chart-summaries" aria-label="Daily spend summary">
+        <div className="ov-summary-chip"><span>Avg/day</span><strong>{formatUsd(average)}</strong></div>
+        <div className="ov-summary-chip"><span>Peak</span><strong>{peak ? `${formatUsd(peak.cost)} · ${formatShortDay(peak.date)}` : '$0.00'}</strong></div>
+        <div className="ov-summary-chip"><span>Yesterday</span><strong>{formatUsd(yesterday?.cost ?? 0)}</strong></div>
+      </div>
+      {tip && createPortal(
+        <div
+          ref={tipRef}
+          className={`chart-tip${tipPosition ? ' on' : ''}`}
+          style={{ position: 'fixed', ...(tipPosition ?? { left: 0, top: 0 }) }}
+          role="tooltip"
+        >
+          <div className="chart-tip-d">{formatDay(tip.day.date)}</div>
+          <div className="chart-tip-v">{formatUsd(tip.day.cost)}</div>
+          <div className="chart-tip-s">{tip.day.calls} calls · {tip.day.topModels[0]?.name ?? 'No model'} led</div>
+        </div>,
+        document.body,
+      )}
     </>
   )
 }
@@ -289,10 +378,8 @@ export function OverviewContent({
   const stats = deriveStats(data, now)
   const periodDaily = sliceDailyToPeriod(data.history.daily, period, now)
   const chartDaily = buildDailyWindow(data.history.daily, now, Math.max(30, periodDaily.length))
+  const models = aggregateModels(periodDaily)
   const recent14 = data.history.daily.slice(-14)
-  const dailyAverage = mean(periodDaily.map(day => day.cost))
-  const averageDelta = dailyAverage > 0 ? ((stats.todayCost - dailyAverage) / dailyAverage) * 100 : 0
-  const comparison = averageDelta <= 0 ? 'under' : 'over'
   const weekNow = mean(recent14.slice(-7).map(day => day.cost))
   const weekPrior = mean(recent14.slice(-14, -7).map(day => day.cost))
   const weeklyPct = weekPrior > 0 ? Math.round(Math.abs((weekNow - weekPrior) / weekPrior * 100)) : null
@@ -300,21 +387,13 @@ export function OverviewContent({
   const topModel = data.current.topModels[0]
   const saved = actReport.data?.totals.realizedCostUSD ?? 0
   const applied = saved > 0 ? (actReport.data?.totals.measuredActions ?? 0) : 0
-  const cumulativeSavings = data.history.daily.reduce<number[]>((values, day) => {
-    values.push((values.at(-1) ?? 0) + day.savingsUSD)
-    return values
-  }, []).slice(-14)
-
   return (
     <>
       <div className="ov-hero-row">
         <div className="ov-card ov-hero">
-          <div className="ov-hero-top"><span className="ov-label">Today's burn</span><span className="ov-streak"><b>{streakDays(data.history.daily, now)}</b>-day streak</span></div>
-          <CountUp value={stats.todayCost} />
-          <div className="ov-hero-sub">
-            {stats.todayEntry?.calls ?? 0} calls · <span className={comparison === 'under' ? 'ok' : 'neutral'}>{Math.abs(Math.round(averageDelta))}% {comparison}</span> your daily average of {formatUsd(dailyAverage)}
-          </div>
-          <Sparkline values={recent14.map(day => day.cost)} hero />
+          <div className="ov-hero-top"><span className="ov-label">{data.current.label}</span><span className="ov-streak"><b>{streakDays(data.history.daily, now)}</b>-day streak</span></div>
+          <CountUp value={data.current.cost} />
+          <div className="ov-hero-sub">{data.current.calls.toLocaleString('en-US')} calls · {data.current.sessions.toLocaleString('en-US')} sessions</div>
         </div>
         <FuelRing status={plans.data} onNavigate={onNavigate} />
       </div>
@@ -328,9 +407,14 @@ export function OverviewContent({
       </div>
 
       <div className="ov-stats3">
-        <div className="ov-card ov-stat"><div className="ov-label">Month to date</div><div className="v">{formatUsd(stats.mtd)}</div><div className="d">{stats.pacePct === null ? `No ${stats.prevMonthName} pace yet` : `${stats.pacePct >= 0 ? '+' : ''}${Math.round(stats.pacePct)}% vs ${stats.prevMonthName} pace`}</div><Sparkline values={data.history.daily.filter(day => day.date.startsWith(localDateKey(now).slice(0, 7))).map(day => day.cost)} /></div>
-        <div className="ov-card ov-stat"><div className="ov-label">Projected month</div><div className="v">{formatUsd(stats.projected)} <small>est</small></div><div className="d warn">{formatUsd(Math.max(0, stats.projected - stats.mtd))} to go</div><Sparkline values={recent14.map(day => day.cost)} /></div>
-        <div className="ov-card ov-stat"><div className="ov-label">Saved to date</div><div className="v" style={{ color: 'var(--ok)' }}>{formatUsd(saved)}</div><div className="d ok">from {applied} applied fixes</div><Sparkline values={cumulativeSavings} ok /></div>
+        <div className="ov-card ov-stat"><div className="ov-label">Month to date</div><div className="v">{formatUsd(stats.mtd)}</div><div className="d">{stats.pacePct === null ? `No ${stats.prevMonthName} pace yet` : `${stats.pacePct >= 0 ? '+' : ''}${Math.round(stats.pacePct)}% vs ${stats.prevMonthName} pace`}</div></div>
+        <div className="ov-card ov-stat"><div className="ov-label">Projected month</div><div className="v">{formatUsd(stats.projected)} <small>est</small></div><div className="d warn">{formatUsd(Math.max(0, stats.projected - stats.mtd))} to go</div></div>
+        <div className="ov-card ov-stat"><div className="ov-label">Saved to date</div><div className="v" style={{ color: 'var(--ok)' }}>{formatUsd(saved)}</div><div className="d ok">from {applied} applied fixes</div></div>
+      </div>
+
+      <div className="ov-card ov-panel">
+        <div className="ov-panel-head"><h3>Models this period</h3><span className="r">Sorted by cost</span></div>
+        <div className="ov-panel-body ov-model-panel"><ModelsTable models={models} /></div>
       </div>
 
       <div className="ov-card ov-panel">
