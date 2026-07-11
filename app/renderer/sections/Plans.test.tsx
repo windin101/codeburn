@@ -172,4 +172,13 @@ describe('Plans', () => {
 
     expect(await screen.findByText('Locate the codeburn CLI')).toBeInTheDocument()
   })
+
+  it('renders permission-denied CLI failures as the amber Full Disk Access state', async () => {
+    getPlans.mockRejectedValue({ kind: 'nonzero', message: 'Cursor permission denied: grant Full Disk Access' })
+
+    render(<Plans period="week" />)
+
+    expect(await screen.findByText('Permission denied')).toBeInTheDocument()
+    expect(screen.getByText('permission denied — grant Full Disk Access')).toHaveStyle({ color: 'var(--amber)' })
+  })
 })

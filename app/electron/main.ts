@@ -7,9 +7,6 @@ import { CliError, resolveCodeburnPath, spawnCli } from './cli'
 // `kind` survives contextBridge serialization. preload.ts unwraps it.
 export type Envelope<T = unknown> = { ok: true; value: T } | { ok: false; error: { kind: string; message: string } }
 
-const REFRESH_CHANNEL = 'codeburn:refresh'
-const REFRESH_INTERVAL_MS = 30_000
-
 function providerArgs(provider: string | undefined): string[] {
   return provider && provider !== 'all' ? ['--provider', provider] : []
 }
@@ -94,12 +91,6 @@ function createWindow(): BrowserWindow {
   } else {
     void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
   }
-
-  // 30s refresh tick — the renderer's usePolled hooks revalidate on it.
-  const timer = setInterval(() => {
-    if (!win.isDestroyed()) win.webContents.send(REFRESH_CHANNEL)
-  }, REFRESH_INTERVAL_MS)
-  win.on('closed', () => clearInterval(timer))
 
   return win
 }

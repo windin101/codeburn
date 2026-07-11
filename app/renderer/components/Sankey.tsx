@@ -1,4 +1,5 @@
-import { isOtherNode, seriesHexForModel } from './StackedBars'
+import { formatUsd } from '../lib/format'
+import { isOtherNode, seriesHexForModel } from '../lib/modelSeries'
 import type { SpendFlow, SpendFlowNode } from '../lib/types'
 
 type LayoutNode = SpendFlowNode & {
@@ -98,12 +99,12 @@ export function Sankey({ flow }: { flow: SpendFlow }) {
 
       {models.map(node => (
         <text key={node.id} x="118" y={round(node.y + node.h / 2 + 3)} textAnchor="end" fontSize="10" fill="#9BA3B7">
-          {node.displayLabel} · {fmtUsd(node.cost)}
+          {node.displayLabel} · {formatUsd(node.cost)}
         </text>
       ))}
       {projects.map(node => (
         <text key={node.id} x="534" y={round(node.y + node.h / 2 + 3)} fontSize="10" fill="#9BA3B7">
-          {node.displayLabel} · {fmtUsd(node.cost)}
+          {node.displayLabel} · {formatUsd(node.cost)}
         </text>
       ))}
     </svg>
@@ -141,10 +142,6 @@ function gradientId(id: string): string {
 
 function round(n: number): number {
   return Math.round(n * 10) / 10
-}
-
-function fmtUsd(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function modelDisplayLabel(raw: string): string {

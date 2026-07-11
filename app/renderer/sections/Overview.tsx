@@ -1,49 +1,15 @@
 import { CapsuleChart, fmtDay } from '../components/CapsuleChart'
+import { CliErrorPanel } from '../components/CliErrorPanel'
 import { ListRow, seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { Stat } from '../components/Stat'
-import { usePolled } from '../hooks/usePolled'
+import { type Polled, usePolled } from '../hooks/usePolled'
+import { formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
+import { localDateKey, sliceDailyToPeriod } from '../lib/period'
 import type { DailyHistoryEntry, MenubarPayload, Period } from '../lib/types'
 
-function fmtUsd(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-/** Local calendar date key "YYYY-MM-DD", matching the CLI's `dateKey` (src/day-aggregator.ts). */
-export function localDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
-/**
- * `history.daily` is NOT scoped to the selected period — the CLI backfills up to
- * 365 days regardless of `period`, and zero-activity days are simply absent. So
- * the chart (and any per-period rate) must slice it to the selected window here.
- * Returns the inclusive lower-bound date key ("YYYY-MM-DD"), or null for `all`:
- *   today  → today only          week   → last 7 calendar days
- *   30days → last 30 calendar days   month → 1st of the current month   all → no lower bound
- */
-export function periodWindowStart(period: Period, now: Date): string | null {
-  switch (period) {
-    case 'today':
-      return localDateKey(now)
-    case 'week':
-      return localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6))
-    case '30days':
-      return localDateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29))
-    case 'month':
-      return localDateKey(new Date(now.getFullYear(), now.getMonth(), 1))
-    case 'all':
-      return null
-  }
-}
-
-/** `history.daily` entries within the selected period's date window (see above). */
-export function sliceDailyToPeriod(daily: DailyHistoryEntry[], period: Period, now: Date): DailyHistoryEntry[] {
-  const start = periodWindowStart(period, now)
-  const todayKey = localDateKey(now)
-  return daily.filter(d => (start === null || d.date >= start) && d.date <= todayKey)
-}
+export { localDateKey } from '../lib/period'
 
 /**
  * Length of the selected period in days, for normalizing period-scoped totals
@@ -168,36 +134,21 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
 }
 
 export function Overview({ period, provider }: { period: Period; provider: string }) {
-  const { data, error } = usePolled<MenubarPayload>(
+  const overview = usePolled<MenubarPayload>(
     () => codeburn.getOverview(period, provider),
     [period, provider],
   )
 
+  return <OverviewContent period={period} overview={overview} />
+}
+
+export function OverviewContent({ period, overview }: { period: Period; overview: Polled<MenubarPayload> }) {
+  const { data, error } = overview
+
   // Retain last-good data across a failed refresh; only fall to a state when we
   // have nothing to show.
   if (!data) {
-    if (error?.kind === 'not-found') {
-      return (
-        <Panel title="Locate the codeburn CLI">
-          <p style={{ color: 'var(--t2)', margin: '0 0 6px', fontSize: 12.5 }}>
-            CodeBurn Desktop reads your usage by running the{' '}
-            <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>codeburn</code> command, but it isn&apos;t
-            on your PATH yet.
-          </p>
-          <p style={{ color: 'var(--t3)', margin: 0, fontSize: 11.5 }}>
-            Install it with <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>npm i -g codeburn</code>,
-            then reopen this window.
-          </p>
-        </Panel>
-      )
-    }
-    if (error) {
-      return (
-        <Panel title="Couldn't read usage">
-          <p style={{ color: 'var(--red)', margin: 0, fontSize: 12 }}>{error.message}</p>
-        </Panel>
-      )
-    }
+    if (error) return <CliErrorPanel error={error} subject="your usage" />
     return (
       <Panel title="Overview">
         <EmptyNote>Scanning sessions…</EmptyNote>
@@ -219,13 +170,13 @@ export function Overview({ period, provider }: { period: Period; provider: strin
       <div className="stats">
         <Stat
           label="Today"
-          value={fmtUsd(s.todayCost)}
+          value={formatUsd(s.todayCost)}
           delta={s.todayEntry ? `${s.todayEntry.calls.toLocaleString('en-US')} calls` : undefined}
           tone="info"
         />
         <Stat
           label="Month to date"
-          value={fmtUsd(s.mtd)}
+          value={formatUsd(s.mtd)}
           delta={
             s.pacePct !== null
               ? `${s.pacePct >= 0 ? '+' : ''}${Math.round(s.pacePct)}% vs ${s.prevMonthName} pace`
@@ -237,17 +188,17 @@ export function Overview({ period, provider }: { period: Period; provider: strin
           label="Projected month"
           value={
             <>
-              {fmtUsd(s.projected)} <small>est</small>
+              {formatUsd(s.projected)} <small>est</small>
             </>
           }
-          delta={s.restOfMonth > 0 ? `+${fmtUsd(s.restOfMonth)} rest of month` : undefined}
+          delta={s.restOfMonth > 0 ? `+${formatUsd(s.restOfMonth)} rest of month` : undefined}
           tone="info"
         />
         <Stat
           label="Waste found"
           value={
             <>
-              {fmtUsd(s.weeklyWaste)} <small>/wk</small>
+              {formatUsd(s.weeklyWaste)} <small>/wk</small>
             </>
           }
           delta={s.findingCount > 0 ? `${s.findingCount} fixes ready` : undefined}
@@ -271,7 +222,7 @@ export function Overview({ period, provider }: { period: Period; provider: strin
                 dotColor={seriesColorForModel(model)}
                 title={session.project}
                 sub={sub}
-                value={fmtUsd(session.cost)}
+                value={formatUsd(session.cost)}
               />
             )
           })

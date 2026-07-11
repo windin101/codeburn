@@ -1,11 +1,13 @@
 import { useState } from 'react'
 
+import { CliErrorPanel, CliErrorText } from '../components/CliErrorPanel'
 import { ListRow } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { Sankey } from '../components/Sankey'
 import { SegTabs } from '../components/SegTabs'
 import { StackedBars } from '../components/StackedBars'
-import { usePolled } from '../hooks/usePolled'
+import { type Polled, usePolled } from '../hooks/usePolled'
+import { formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import { sliceDailyToPeriod } from '../lib/period'
 import type { MenubarPayload, Period, SpendFlow } from '../lib/types'
@@ -20,42 +22,31 @@ const LENSES = [
   { value: 'subagents', label: 'Subagents' },
 ]
 
-function fmtUsd(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>{children}</p>
 }
 
 export function Spend({ period, provider }: { period: Period; provider: string }) {
   const overview = usePolled<MenubarPayload>(() => codeburn.getOverview(period, provider), [period, provider])
-  const flow = usePolled<SpendFlow>(() => codeburn.getSpendFlow(period, provider), [period, provider])
+  return <SpendContent period={period} provider={provider} overview={overview} />
+}
+
+export function SpendContent({
+  period,
+  provider,
+  overview,
+  refreshToken = 0,
+}: {
+  period: Period
+  provider: string
+  overview: Polled<MenubarPayload>
+  refreshToken?: number
+}) {
+  const flow = usePolled<SpendFlow>(() => codeburn.getSpendFlow(period, provider), [period, provider, refreshToken])
   const [lens, setLens] = useState<Lens>('projects')
 
   if (!overview.data) {
-    if (overview.error?.kind === 'not-found') {
-      return (
-        <Panel title="Locate the codeburn CLI">
-          <p style={{ color: 'var(--t2)', margin: '0 0 6px', fontSize: 12.5 }}>
-            CodeBurn Desktop reads your usage by running the{' '}
-            <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>codeburn</code> command, but it isn&apos;t
-            on your PATH yet.
-          </p>
-          <p style={{ color: 'var(--t3)', margin: 0, fontSize: 11.5 }}>
-            Install it with <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>npm i -g codeburn</code>,
-            then reopen this window.
-          </p>
-        </Panel>
-      )
-    }
-    if (overview.error) {
-      return (
-        <Panel title="Couldn't read spend">
-          <p style={{ color: 'var(--red)', margin: 0, fontSize: 12 }}>{overview.error.message}</p>
-        </Panel>
-      )
-    }
+    if (overview.error) return <CliErrorPanel error={overview.error} subject="spend" />
     return (
       <Panel title="Spend">
         <EmptyNote>Scanning spend…</EmptyNote>
@@ -101,7 +92,7 @@ function ProjectsLens({
                 no={String(i + 1).padStart(2, '0')}
                 title={project.name}
                 sub={`${project.sessions.toLocaleString('en-US')} ${project.sessions === 1 ? 'session' : 'sessions'}`}
-                value={fmtUsd(project.cost)}
+                value={formatUsd(project.cost)}
               />
             ))
           ) : (
@@ -114,7 +105,7 @@ function ProjectsLens({
         {flow.data && flow.data.links.length ? (
           <Sankey flow={flow.data} />
         ) : flow.error ? (
-          <p style={{ color: 'var(--red)', margin: 0, fontSize: 12 }}>{flow.error.message}</p>
+          <CliErrorText error={flow.error} />
         ) : (
           <EmptyNote>{flow.loading ? 'Loading cost flow…' : 'No model-project flow in this range yet.'}</EmptyNote>
         )}
@@ -130,13 +121,13 @@ function DetailLens({ data, lens }: { data: MenubarPayload; lens: Exclude<Lens, 
         key: `activity-${row.name}`,
         title: row.name,
         sub: `${row.turns.toLocaleString('en-US')} turns`,
-        value: fmtUsd(row.cost),
+        value: formatUsd(row.cost),
       })),
       ...data.current.skills.map(row => ({
         key: `skill-${row.name}`,
         title: row.name,
         sub: `${row.turns.toLocaleString('en-US')} turns · skill`,
-        value: fmtUsd(row.cost),
+        value: formatUsd(row.cost),
       })),
     ]
     return <RowsPanel title="Activity" rows={rows} empty="No activity or skill spend in this range yet." />
@@ -166,7 +157,7 @@ function DetailLens({ data, lens }: { data: MenubarPayload; lens: Exclude<Lens, 
     key: row.name,
     title: row.name,
     sub: `${row.calls.toLocaleString('en-US')} calls`,
-    value: fmtUsd(row.cost),
+    value: formatUsd(row.cost),
   }))
   return <RowsPanel title="Subagents" rows={rows} empty="No subagent spend in this range yet." />
 }

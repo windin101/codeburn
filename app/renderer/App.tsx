@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
 import { Hint } from './components/Hint'
 import { Panel } from './components/Panel'
@@ -6,13 +6,14 @@ import { Sidebar, type Section } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { Window } from './components/Window'
 import { usePolled } from './hooks/usePolled'
+import { formatUsd } from './lib/format'
 import { codeburn } from './lib/ipc'
-import { Overview } from './sections/Overview'
-import { Optimize } from './sections/Optimize'
+import { OverviewContent } from './sections/Overview'
+import { OptimizeContent } from './sections/Optimize'
 import { Models } from './sections/Models'
 import { Plans } from './sections/Plans'
 import { Settings } from './sections/Settings'
-import { Spend } from './sections/Spend'
+import { SpendContent } from './sections/Spend'
 import type { MenubarPayload, Period } from './lib/types'
 
 const SECTION_TITLES: Record<Section, string> = {
@@ -33,40 +34,89 @@ const PERIOD_LABELS: Record<Period, string> = {
 }
 
 const STANDARD_PERIODS: Period[] = ['today', 'week', '30days', 'month', 'all']
+const PROVIDER_OPTIONS = ['all', 'claude', 'codex', 'cursor', 'grok'] as const
+const PROVIDER_LABELS: Record<(typeof PROVIDER_OPTIONS)[number], string> = {
+  all: 'All providers',
+  claude: 'Claude',
+  codex: 'Codex',
+  cursor: 'Cursor',
+  grok: 'Grok',
+}
 
 function isPeriod(value: string): value is Period {
   return (STANDARD_PERIODS as string[]).includes(value)
 }
 
-function fmtUsd(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+function refreshedLabel(lastSuccessAt: number | null, loading: boolean, now: number): string {
+  if (loading && lastSuccessAt === null) return 'refreshing…'
+  if (lastSuccessAt === null) return 'not refreshed yet'
+  const seconds = Math.max(0, Math.floor((now - lastSuccessAt) / 1000))
+  if (seconds < 1) return 'refreshed just now'
+  if (seconds < 60) return `refreshed ${seconds}s ago`
+  const minutes = Math.floor(seconds / 60)
+  return `refreshed ${minutes}m ago`
 }
 
 export function App() {
   const [section, setSection] = useState<Section>('overview')
   const [period, setPeriod] = useState<Period>('30days')
-  const provider = 'all'
+  const [provider, setProvider] = useState<(typeof PROVIDER_OPTIONS)[number]>('all')
+  const [refreshToken, setRefreshToken] = useState(0)
+  const [now, setNow] = useState(() => Date.now())
 
-  // Polled at the app level: proves the spawn→IPC→render path and feeds the
-  // sidebar status line. Section-specific fetching lands in T2–T7.
   const overview = usePolled<MenubarPayload>(() => codeburn.getOverview(period, provider), [period, provider])
+  const refreshOverview = overview.refresh
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const refreshVisible = useCallback(() => {
+    refreshOverview()
+    setRefreshToken(token => token + 1)
+  }, [refreshOverview])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) return
+      const key = event.key.toLowerCase()
+      if (key === '1') setSection('overview')
+      else if (key === '2') setSection('spend')
+      else if (key === '3') setSection('optimize')
+      else if (key === '4') setSection('models')
+      else if (key === '5') setSection('plans')
+      else if (key === ',') setSection('settings')
+      else if (key === 'r') refreshVisible()
+      else return
+      event.preventDefault()
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [refreshVisible])
 
   const onPeriodChange = (value: string) => {
-    // 6M / Custom (date ranges) are not wired until T8; ignore for now so the
+    // 6M / Custom (date ranges) are M2; ignore for now so the
     // highlight never lies about what was fetched.
     if (isPeriod(value)) setPeriod(value)
   }
 
-  const scope = `${PERIOD_LABELS[period]} · All providers`
+  const onProviderClick = () => {
+    setProvider(current => PROVIDER_OPTIONS[(PROVIDER_OPTIONS.indexOf(current) + 1) % PROVIDER_OPTIONS.length])
+  }
+
+  const providerLabel = PROVIDER_LABELS[provider]
+  const scope = `${PERIOD_LABELS[period]} · ${providerLabel}`
 
   return (
     <Window>
       <Sidebar active={section} onNavigate={setSection} status={<StatusLine polled={overview} />} />
       <div className="ct">
         {section === 'plans' ? (
-          <Plans period={period} />
+          <Plans period={period} refreshToken={refreshToken} />
         ) : section === 'settings' ? (
-          <Settings period={period} />
+          <Settings period={period} refreshToken={refreshToken} />
         ) : (
           <>
             <TopBar
@@ -74,17 +124,18 @@ export function App() {
               scope={scope}
               period={period}
               onPeriodChange={onPeriodChange}
-              providerLabel="All providers"
+              providerLabel={providerLabel}
+              onProviderClick={onProviderClick}
             />
             <div className="body">
               {section === 'overview' ? (
-                <Overview period={period} provider={provider} />
+                <OverviewContent period={period} overview={overview} />
               ) : section === 'spend' ? (
-                <Spend period={period} provider={provider} />
+                <SpendContent period={period} provider={provider} overview={overview} refreshToken={refreshToken} />
               ) : section === 'optimize' ? (
-                <Optimize period={period} provider={provider} />
+                <OptimizeContent period={period} overview={overview} refreshToken={refreshToken} />
               ) : section === 'models' ? (
-                <Models period={period} provider={provider} />
+                <Models period={period} provider={provider} refreshToken={refreshToken} />
               ) : (
                 <SectionPlaceholder title={SECTION_TITLES[section]} />
               )}
@@ -97,7 +148,7 @@ export function App() {
               { k: '⌘K', label: 'Command' },
               { k: '⌘E', label: 'Export view' },
             ]}
-            right={overview.loading ? 'refreshing…' : 'auto-refresh 30s'}
+            right={refreshedLabel(overview.lastSuccessAt, overview.loading, now)}
           />
         )}
       </div>
@@ -109,7 +160,7 @@ function StatusLine({ polled }: { polled: ReturnType<typeof usePolled<MenubarPay
   if (polled.data) {
     return (
       <>
-        {polled.data.current.label} <b>{fmtUsd(polled.data.current.cost)}</b>
+        {polled.data.current.label} <b>{formatUsd(polled.data.current.cost)}</b>
       </>
     )
   }

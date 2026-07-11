@@ -2,24 +2,15 @@ import type { CliError, CodeburnBridge } from './types'
 
 // The preload script (app/electron/preload.ts) exposes `window.codeburn` as the
 // typed CodeburnBridge (methods resolve to CLI JSON or reject with a plain
-// CliError), and `window.codeburnEvents` for main→renderer push events.
+// CliError).
 declare global {
   interface Window {
     codeburn: CodeburnBridge
-    codeburnEvents: {
-      /** Subscribe to the main-process 30s refresh tick. Returns an unsubscribe fn. */
-      onRefresh(cb: () => void): () => void
-    }
   }
 }
 
 /** The typed bridge. Import this instead of touching `window` directly. */
 export const codeburn: CodeburnBridge = window.codeburn
-
-/** Subscribe to the main-process refresh tick. */
-export function onRefresh(cb: () => void): () => void {
-  return window.codeburnEvents.onRefresh(cb)
-}
 
 /** Coerce anything thrown across the IPC boundary into a CliError shape. */
 export function normalizeCliError(err: unknown): CliError {

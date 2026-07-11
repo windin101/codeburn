@@ -107,4 +107,63 @@ describe('Settings', () => {
     expect(container.querySelector('.tglon')).toBeInTheDocument()
     expect(getDevices).toHaveBeenCalledWith('month')
   })
+
+  it('excludes already-paired scanned devices from wants-to-pair results', async () => {
+    getIdentity.mockResolvedValue(identity)
+    getDevices.mockResolvedValue(devices)
+    getDevicesScan.mockResolvedValue({
+      found: [
+        ...scan.found,
+        {
+          name: 'Already Paired',
+          host: 'paired.local',
+          port: 9732,
+          fingerprint: 'AA:BB:CC:DD',
+          code: 'pair-2',
+          paired: true,
+        },
+      ],
+    })
+
+    render(<Settings period="month" />)
+
+    expect(await screen.findByText('Mac Studio')).toBeInTheDocument()
+    expect(screen.queryByText('Already Paired')).not.toBeInTheDocument()
+  })
+
+  it('renders empty settings states when no devices are discovered or paired', async () => {
+    getIdentity.mockResolvedValue(identity)
+    getDevicesScan.mockResolvedValue({ found: [] })
+    getDevices.mockResolvedValue({
+      perDevice: [devices.perDevice[0]],
+      combined: { ...devices.combined, deviceCount: 1, reachableCount: 1 },
+    })
+
+    render(<Settings period="week" />)
+
+    expect(await screen.findByText('Toruk MacBook Pro')).toBeInTheDocument()
+    expect(screen.getByText('No nearby devices found.')).toBeInTheDocument()
+    expect(screen.getByText('No paired devices yet.')).toBeInTheDocument()
+  })
+
+  it('renders not-found states for Settings CLI reads', async () => {
+    getIdentity.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+    getDevicesScan.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+    getDevices.mockRejectedValue({ kind: 'not-found', message: 'codeburn not found' })
+
+    render(<Settings period="week" />)
+
+    expect(await screen.findAllByText('Locate the codeburn CLI')).toHaveLength(3)
+  })
+
+  it('uses amber for permission errors and red for other Settings errors', async () => {
+    getIdentity.mockRejectedValue({ kind: 'nonzero', message: 'Cursor permission denied: Full Disk Access required' })
+    getDevicesScan.mockRejectedValue({ kind: 'nonzero', message: 'scan failed' })
+    getDevices.mockResolvedValue(devices)
+
+    render(<Settings period="week" />)
+
+    expect(await screen.findByText('permission denied — grant Full Disk Access')).toHaveStyle({ color: 'var(--amber)' })
+    expect(screen.getByText('scan failed')).toHaveStyle({ color: 'var(--red)' })
+  })
 })

@@ -7,6 +7,8 @@ export type Polled<T> = {
   data: T | null
   error: CliError | null
   loading: boolean
+  /** Wall-clock timestamp for the most recent successful fetch. */
+  lastSuccessAt: number | null
   /** Re-run the fetcher immediately (period/provider change, manual refresh). */
   refresh: () => void
 }
@@ -20,6 +22,7 @@ export function usePolled<T>(fetcher: () => Promise<T>, deps: unknown[], interva
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<CliError | null>(null)
   const [loading, setLoading] = useState(true)
+  const [lastSuccessAt, setLastSuccessAt] = useState<number | null>(null)
   // Generation counter: every load() (mount, deps change, interval, refresh)
   // claims the next epoch; a fetch applies its result only while its epoch is
   // still current. This is what keeps a slow fetch from an older deps/period
@@ -34,6 +37,7 @@ export function usePolled<T>(fetcher: () => Promise<T>, deps: unknown[], interva
         if (epochRef.current !== epoch) return
         setData(result)
         setError(null)
+        setLastSuccessAt(Date.now())
       })
       .catch(err => {
         if (epochRef.current !== epoch) return
@@ -62,5 +66,5 @@ export function usePolled<T>(fetcher: () => Promise<T>, deps: unknown[], interva
     load()
   }, [load])
 
-  return { data, error, loading, refresh }
+  return { data, error, loading, lastSuccessAt, refresh }
 }

@@ -28,13 +28,4 @@ const bridge = {
   cliStatus: () => invoke('codeburn:cliStatus'),
 }
 
-const events = {
-  onRefresh: (cb: () => void): (() => void) => {
-    const listener = () => cb()
-    ipcRenderer.on('codeburn:refresh', listener)
-    return () => ipcRenderer.removeListener('codeburn:refresh', listener)
-  },
-}
-
 contextBridge.exposeInMainWorld('codeburn', bridge)
-contextBridge.exposeInMainWorld('codeburnEvents', events)

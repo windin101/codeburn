@@ -1,9 +1,11 @@
 import { useState } from 'react'
 
+import { CliErrorPanel } from '../components/CliErrorPanel'
 import { seriesColorForModel } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { SegTabs } from '../components/SegTabs'
 import { usePolled } from '../hooks/usePolled'
+import { formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import type { ModelReportRow, Period } from '../lib/types'
 
@@ -13,10 +15,6 @@ const LENSES = [
   { value: 'model', label: 'By model' },
   { value: 'task', label: 'By task' },
 ]
-
-function fmtUsd(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
 
 function fmtInt(n: number): string {
   return n.toLocaleString('en-US')
@@ -35,37 +33,16 @@ function EmptyNote({ children }: { children: React.ReactNode }) {
   return <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>{children}</p>
 }
 
-export function Models({ period, provider }: { period: Period; provider: string }) {
+export function Models({ period, provider, refreshToken = 0 }: { period: Period; provider: string; refreshToken?: number }) {
   const [lens, setLens] = useState<ModelsLens>('model')
   const byTask = lens === 'task'
   const report = usePolled<ModelReportRow[]>(
     () => codeburn.getModels(period, provider, byTask),
-    [period, provider, byTask],
+    [period, provider, byTask, refreshToken],
   )
 
   if (!report.data) {
-    if (report.error?.kind === 'not-found') {
-      return (
-        <Panel title="Locate the codeburn CLI">
-          <p style={{ color: 'var(--t2)', margin: '0 0 6px', fontSize: 12.5 }}>
-            CodeBurn Desktop reads your model usage by running the{' '}
-            <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>codeburn</code> command, but it isn&apos;t
-            on your PATH yet.
-          </p>
-          <p style={{ color: 'var(--t3)', margin: 0, fontSize: 11.5 }}>
-            Install it with <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>npm i -g codeburn</code>,
-            then reopen this window.
-          </p>
-        </Panel>
-      )
-    }
-    if (report.error) {
-      return (
-        <Panel title="Couldn't read models">
-          <p style={{ color: 'var(--red)', margin: 0, fontSize: 12 }}>{report.error.message}</p>
-        </Panel>
-      )
-    }
+    if (report.error) return <CliErrorPanel error={report.error} subject="model usage" />
     return (
       <Panel title="Models">
         <EmptyNote>Scanning model usage…</EmptyNote>
@@ -147,8 +124,8 @@ function ModelTableRow({ row, byTask }: { row: ModelReportRow; byTask: boolean }
       <td className={cellClass}>{tokenValue(row.inputTokens)}</td>
       <td className={cellClass}>{tokenValue(row.outputTokens)}</td>
       <td className={cellClass}>{tokenValue(row.cacheReadTokens)}</td>
-      <td className={cellClass}>{unpriced ? '—' : fmtUsd(row.costUSD)}</td>
-      <td className={unpriced ? 'dim' : row.savingsUSD > 0 ? 'pos' : undefined}>{unpriced ? '—' : fmtUsd(row.savingsUSD)}</td>
+      <td className={cellClass}>{unpriced ? '—' : formatUsd(row.costUSD)}</td>
+      <td className={unpriced ? 'dim' : row.savingsUSD > 0 ? 'pos' : undefined}>{unpriced ? '—' : formatUsd(row.savingsUSD)}</td>
     </tr>
   )
 }

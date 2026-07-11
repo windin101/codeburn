@@ -1,14 +1,12 @@
 import { Hint } from '../components/Hint'
+import { CliErrorText, cliErrorDisplay } from '../components/CliErrorPanel'
 import { Panel } from '../components/Panel'
 import { usePolled } from '../hooks/usePolled'
+import { formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
-import type { CombinedUsage, DeviceScanResult, Identity, Period } from '../lib/types'
+import type { CliError, CombinedUsage, DeviceScanResult, Identity, Period } from '../lib/types'
 
 const RAIL_ITEMS = ['General', 'Providers', 'Model aliases', 'Plans', 'Devices', 'Export', 'Privacy & data'] as const
-
-function fmtUsd(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
 
 function periodLabel(period: Period): string {
   if (period === 'today') return 'today'
@@ -24,21 +22,10 @@ function shortFingerprint(fingerprint: string): string {
   return `${parts[0]}:${parts[1]}:…:${parts[parts.length - 1]}`
 }
 
-function isPermissionError(message: string): boolean {
-  return /permission|full disk access|eacces/i.test(message)
-}
-
-function errorText(error: { kind: string; message: string } | null): string | null {
-  if (!error) return null
-  if (error.kind === 'not-found') return 'codeburn CLI not found'
-  if (error.kind === 'nonzero' && isPermissionError(error.message)) return 'permission denied — grant Full Disk Access'
-  return error.message
-}
-
-export function Settings({ period }: { period: Period }) {
-  const identity = usePolled<Identity>(() => codeburn.getIdentity(), [])
-  const scan = usePolled<DeviceScanResult>(() => codeburn.getDevicesScan(), [])
-  const devices = usePolled<CombinedUsage>(() => codeburn.getDevices(period), [period])
+export function Settings({ period, refreshToken = 0 }: { period: Period; refreshToken?: number }) {
+  const identity = usePolled<Identity>(() => codeburn.getIdentity(), [refreshToken])
+  const scan = usePolled<DeviceScanResult>(() => codeburn.getDevicesScan(), [refreshToken])
+  const devices = usePolled<CombinedUsage>(() => codeburn.getDevices(period), [period, refreshToken])
 
   return (
     <>
@@ -65,8 +52,6 @@ export function Settings({ period }: { period: Period }) {
 }
 
 function ThisDevicePanel({ identity }: { identity: ReturnType<typeof usePolled<Identity>> }) {
-  const error = errorText(identity.error)
-
   return (
     <Panel title="This device">
       {identity.data ? (
@@ -80,25 +65,24 @@ function ThisDevicePanel({ identity }: { identity: ReturnType<typeof usePolled<I
             Visibility: on
           </span>
         </div>
+      ) : identity.error ? (
+        <SettingsErrorText error={identity.error} />
       ) : (
-        <p style={{ color: error ? 'var(--amber)' : 'var(--t3)', margin: 0, fontSize: 12 }}>
-          {error ?? 'Reading this device identity…'}
-        </p>
+        <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>Reading this device identity…</p>
       )}
     </Panel>
   )
 }
 
 function DiscoveredPanel({ scan }: { scan: ReturnType<typeof usePolled<DeviceScanResult>> }) {
-  const error = errorText(scan.error)
   const found = scan.data?.found.filter(device => !device.paired) ?? []
 
   return (
     <Panel title="Discovered nearby" right={scan.loading ? 'listening…' : undefined}>
-      {!scan.data ? (
-        <p style={{ color: error ? 'var(--amber)' : 'var(--t3)', margin: 0, fontSize: 12 }}>
-          {error ?? 'listening…'}
-        </p>
+      {!scan.data && scan.error ? (
+        <SettingsErrorText error={scan.error} />
+      ) : !scan.data ? (
+        <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>listening…</p>
       ) : found.length === 0 ? (
         <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>No nearby devices found.</p>
       ) : (
@@ -119,16 +103,15 @@ function DiscoveredPanel({ scan }: { scan: ReturnType<typeof usePolled<DeviceSca
 }
 
 function PairedPanel({ devices, period }: { devices: ReturnType<typeof usePolled<CombinedUsage>>; period: Period }) {
-  const error = errorText(devices.error)
   const paired = devices.data?.perDevice.filter(device => !device.local) ?? []
   const deviceScope = devices.data ? `· ${devices.data.combined.deviceCount} devices` : '· paired devices'
 
   return (
     <Panel title="Paired">
-      {!devices.data ? (
-        <p style={{ color: error ? 'var(--amber)' : 'var(--t3)', margin: 0, fontSize: 12 }}>
-          {error ?? 'Loading paired devices…'}
-        </p>
+      {!devices.data && devices.error ? (
+        <SettingsErrorText error={devices.error} />
+      ) : !devices.data ? (
+        <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>Loading paired devices…</p>
       ) : paired.length === 0 ? (
         <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>No paired devices yet.</p>
       ) : (
@@ -137,7 +120,7 @@ function PairedPanel({ devices, period }: { devices: ReturnType<typeof usePolled
             <div className="lx">
               <b>{device.name}</b>
               <span>
-                {device.sessions.toLocaleString('en-US')} sessions · {fmtUsd(device.cost)} {periodLabel(period)}
+                {device.sessions.toLocaleString('en-US')} sessions · {formatUsd(device.cost)} {periodLabel(period)}
               </span>
             </div>
             <span className="btn btn-s" aria-disabled="true">
@@ -155,4 +138,12 @@ function PairedPanel({ devices, period }: { devices: ReturnType<typeof usePolled
       </div>
     </Panel>
   )
+}
+
+function SettingsErrorText({ error }: { error: CliError }) {
+  if (error.kind === 'not-found') {
+    const display = cliErrorDisplay(error)
+    return <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>{display.title}</p>
+  }
+  return <CliErrorText error={error} />
 }

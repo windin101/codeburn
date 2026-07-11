@@ -1,18 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 
-/**
- * Series-dot colour for a model name, per the wireframe palette
- * (blue=Opus, purple=Sonnet, lavender=Haiku, cyan=GPT/Codex). Unknown or
- * unmatched models fall back to a neutral slate rather than a fabricated series.
- */
-export function seriesColorForModel(model?: string): string {
-  const m = (model ?? '').toLowerCase()
-  if (m.includes('opus')) return 'var(--blue)'
-  if (m.includes('sonnet')) return 'var(--purple)'
-  if (m.includes('haiku')) return 'var(--lav)'
-  if (m.includes('gpt') || m.includes('codex')) return 'var(--cyan)'
-  return 'var(--t3)'
-}
+export { seriesColorForModel } from '../lib/modelSeries'
 
 /**
  * A `.li` list row: optional rank `.no`, optional model series `.mdot`, a

@@ -1,5 +1,7 @@
+import { CliErrorPanel } from '../components/CliErrorPanel'
 import { Panel } from '../components/Panel'
 import { usePolled } from '../hooks/usePolled'
+import { formatUsd } from '../lib/format'
 import { codeburn } from '../lib/ipc'
 import type { JsonPlanSummary, Period, PlanId, PlanProvider, StatusJson } from '../lib/types'
 
@@ -15,10 +17,6 @@ const PLAN_NAMES: Record<PlanId, string> = {
   'supergrok-heavy': 'SuperGrok Heavy',
   custom: 'Custom plan',
   none: 'API usage',
-}
-
-function fmtUsd(n: number): string {
-  return `$${n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
 function fmtPct(n: number): string {
@@ -78,12 +76,8 @@ function planSummaries(status: StatusJson): JsonPlanSummary[] {
   return status.plan ? [status.plan] : []
 }
 
-function isPermissionError(message: string): boolean {
-  return /permission|full disk access|eacces/i.test(message)
-}
-
-export function Plans({ period }: { period: Period }) {
-  const report = usePolled<StatusJson>(() => codeburn.getPlans(period), [period])
+export function Plans({ period, refreshToken = 0 }: { period: Period; refreshToken?: number }) {
+  const report = usePolled<StatusJson>(() => codeburn.getPlans(period), [period, refreshToken])
   const plans = report.data ? planSummaries(report.data) : []
   const cycle = cycleLabels(plans[0])
 
@@ -105,31 +99,7 @@ export function Plans({ period }: { period: Period }) {
 
 function renderBody(data: StatusJson | null, error: ReturnType<typeof usePolled<StatusJson>>['error'], plans: JsonPlanSummary[]) {
   if (!data) {
-    if (error?.kind === 'not-found') {
-      return (
-        <Panel title="Locate the codeburn CLI">
-          <p style={{ color: 'var(--t2)', margin: '0 0 6px', fontSize: 12.5 }}>
-            CodeBurn Desktop reads plan pacing by running the{' '}
-            <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>codeburn</code> command, but it
-            isn&apos;t on your PATH yet.
-          </p>
-          <p style={{ color: 'var(--t3)', margin: 0, fontSize: 11.5 }}>
-            Install it with <code style={{ fontFamily: 'var(--mono)', color: 'var(--lav)' }}>npm i -g codeburn</code>,
-            then reopen this window.
-          </p>
-        </Panel>
-      )
-    }
-    if (error) {
-      const permission = error.kind === 'nonzero' && isPermissionError(error.message)
-      return (
-        <Panel title={permission ? 'Permission denied' : "Couldn't read plans"}>
-          <p style={{ color: permission ? 'var(--amber)' : 'var(--red)', margin: 0, fontSize: 12 }}>
-            {permission ? 'Grant Full Disk Access, then refresh plan pacing.' : error.message}
-          </p>
-        </Panel>
-      )
-    }
+    if (error) return <CliErrorPanel error={error} subject="plan pacing" />
     return (
       <Panel title="Plans">
         <p style={{ color: 'var(--t3)', margin: 0, fontSize: 12 }}>Scanning plan usage…</p>
@@ -157,9 +127,9 @@ function PlanPanel({ plan }: { plan: JsonPlanSummary }) {
   const trackClass = hasBudget ? (over ? 'over' : undefined) : 'mut'
   const overage = Math.max(0, plan.spent - plan.budget)
   const right = hasBudget
-    ? `${fmtUsd(plan.spent)} · ${fmtPct(plan.percentUsed)}${overage > 0 ? ` · ${fmtUsd(overage)} over` : ''}`
-    : `${fmtUsd(plan.spent)} this cycle`
-  const detail = hasBudget ? `${fmtUsd(plan.budget)} / month · ${plan.provider}` : `${plan.provider} · pay as you go, no plan`
+    ? `${formatUsd(plan.spent)} · ${fmtPct(plan.percentUsed)}${overage > 0 ? ` · ${formatUsd(overage)} over` : ''}`
+    : `${formatUsd(plan.spent)} this cycle`
+  const detail = hasBudget ? `${formatUsd(plan.budget)} / month · ${plan.provider}` : `${plan.provider} · pay as you go, no plan`
 
   return (
     <Panel>
@@ -182,14 +152,14 @@ function PaceLine({ plan }: { plan: JsonPlanSummary }) {
   if (plan.status === 'over' || plan.projectedMonthEnd > plan.budget) {
     return (
       <div className="pace hot">
-        On pace to exceed — projected {fmtUsd(plan.projectedMonthEnd)} by {endLabel}
+        On pace to exceed — projected {formatUsd(plan.projectedMonthEnd)} by {endLabel}
       </div>
     )
   }
   if (plan.status === 'near') {
     return (
       <div className="pace hot">
-        {fmtPct(plan.percentUsed)} of budget used — projected {fmtUsd(plan.projectedMonthEnd)} by {endLabel}
+        {fmtPct(plan.percentUsed)} of budget used — projected {formatUsd(plan.projectedMonthEnd)} by {endLabel}
       </div>
     )
   }
