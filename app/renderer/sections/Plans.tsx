@@ -3,7 +3,7 @@ import { usePolled } from '../hooks/usePolled'
 import { codeburn } from '../lib/ipc'
 import type { JsonPlanSummary, Period, PlanId, PlanProvider, StatusJson } from '../lib/types'
 
-const PROVIDER_ORDER: PlanProvider[] = ['claude', 'codex', 'cursor', 'grok', 'all']
+const PROVIDER_ORDER: PlanProvider[] = ['all', 'claude', 'codex', 'cursor', 'grok']
 const MS_PER_DAY = 24 * 60 * 60 * 1000
 
 const PLAN_NAMES: Record<PlanId, string> = {
@@ -28,16 +28,22 @@ function fmtPct(n: number): string {
 function parseIsoDay(iso: string): number | null {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return null
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
 }
 
-function formatShortDate(iso: string): string {
-  const date = new Date(iso)
+function cycleEndDate(plan: JsonPlanSummary): Date | null {
+  const date = new Date(plan.periodEnd)
+  if (Number.isNaN(date.getTime())) return null
+  date.setDate(date.getDate() - 1)
+  return date
+}
+
+function formatShortDate(value: string | Date): string {
+  const date = value instanceof Date ? value : new Date(value)
   if (Number.isNaN(date.getTime())) return 'unknown'
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',
     day: 'numeric',
-    timeZone: 'UTC',
   }).format(date)
 }
 
@@ -46,15 +52,16 @@ function cycleLabels(plan: JsonPlanSummary | undefined): { caption: string; pop:
   const startDay = parseIsoDay(plan.periodStart)
   const endDay = parseIsoDay(plan.periodEnd)
   const start = formatShortDate(plan.periodStart)
-  const end = formatShortDate(plan.periodEnd)
-  const pop = `Cycle: ${start} - ${end}`
+  const inclusiveEnd = cycleEndDate(plan)
+  const end = inclusiveEnd ? formatShortDate(inclusiveEnd) : 'unknown'
+  const pop = `Cycle: ${start} – ${end}`
 
-  if (startDay === null || endDay === null) return { caption: `Cycle ${start} - ${end}`, pop }
+  if (startDay === null || endDay === null) return { caption: `Cycle ${start} – ${end}`, pop }
 
-  const totalDays = Math.max(1, Math.round((endDay - startDay) / MS_PER_DAY) + 1)
+  const totalDays = Math.max(1, Math.round((endDay - startDay) / MS_PER_DAY))
   const day = Math.min(totalDays, Math.max(1, totalDays - plan.daysUntilReset))
   return {
-    caption: `Cycle ${start} - ${end} · day ${day} of ${totalDays}`,
+    caption: `Cycle ${start} – ${end} · day ${day} of ${totalDays}`,
     pop,
   }
 }
@@ -170,10 +177,19 @@ function PlanPanel({ plan }: { plan: JsonPlanSummary }) {
 }
 
 function PaceLine({ plan }: { plan: JsonPlanSummary }) {
-  if (plan.status === 'over' || plan.status === 'near') {
+  const end = cycleEndDate(plan)
+  const endLabel = end ? formatShortDate(end) : 'unknown'
+  if (plan.status === 'over' || plan.projectedMonthEnd > plan.budget) {
     return (
       <div className="pace hot">
-        On pace to exceed - projected {fmtUsd(plan.projectedMonthEnd)} by {formatShortDate(plan.periodEnd)}
+        On pace to exceed — projected {fmtUsd(plan.projectedMonthEnd)} by {endLabel}
+      </div>
+    )
+  }
+  if (plan.status === 'near') {
+    return (
+      <div className="pace hot">
+        {fmtPct(plan.percentUsed)} of budget used — projected {fmtUsd(plan.projectedMonthEnd)} by {endLabel}
       </div>
     )
   }
