@@ -97,8 +97,8 @@ function readPersistedPath(): string | null {
 
 /**
  * Resolve the absolute path to the `codeburn` binary, or null if not found.
- * Order: dev override (`CODEBURN_BIN`) → persisted-path file → PATH / brew /
- * nvm / volta / asdf → null.
+ * Order: dev override (`CODEBURN_BIN`) → persisted-path file → repo CLI in
+ * Vite development → PATH / brew / nvm / volta / asdf → null.
  */
 export function resolveCodeburnPath(): string | null {
   const override = process.env.CODEBURN_BIN
@@ -106,6 +106,18 @@ export function resolveCodeburnPath(): string | null {
 
   const persisted = readPersistedPath()
   if (persisted) return persisted
+
+  // Dev convenience: when launched by the Vite dev server, prefer the repo's own
+  // freshly-built CLI over a stale globally-installed one, so newly-added
+  // commands (sessions/compare/act JSON) work without setting CODEBURN_BIN.
+  if (process.env.VITE_DEV_SERVER_URL) {
+    const devBin = join(__dirname, '..', '..', '..', 'dist', 'cli.js')
+    if (isExecutableFile(devBin)) return devBin
+    // Vitest loads this source module from app/electron rather than the emitted
+    // app/dist/electron directory; keep the same repo CLI discoverable there.
+    const sourceDevBin = join(__dirname, '..', '..', 'dist', 'cli.js')
+    if (isExecutableFile(sourceDevBin)) return sourceDevBin
+  }
 
   for (const bin of searchDirs().map(dir => join(dir, 'codeburn'))) {
     if (isExecutableFile(bin)) return bin

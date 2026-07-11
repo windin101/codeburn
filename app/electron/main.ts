@@ -52,6 +52,15 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, resolveCodeburnPat
     'codeburn:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange) => [
       'models', '--format', 'json', '--period', period, ...providerArgs(provider), ...(byTask ? ['--by-task'] : []), ...rangeArgs(range),
     ]),
+    'codeburn:getSessions': run((period: string, provider: string, range?: DateRange) => [
+      'sessions', '--format', 'json', '--period', period, ...providerArgs(provider), ...rangeArgs(range),
+    ]),
+    'codeburn:getCompareModels': run((period: string, provider: string) => [
+      'compare', '--format', 'json', '--period', period, ...providerArgs(provider),
+    ]),
+    'codeburn:getCompare': run((period: string, provider: string, modelA: string, modelB: string) => [
+      'compare', '--format', 'json', '--period', period, ...providerArgs(provider), '--model-a', modelA, '--model-b', modelB,
+    ]),
     'codeburn:getYield': run((period: string, range?: DateRange) => [
       'yield', '--format', 'json', '--period', period, ...rangeArgs(range),
     ]),

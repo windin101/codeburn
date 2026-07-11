@@ -28,6 +28,9 @@ const CHANNELS = [
   'codeburn:getPlans',
   'codeburn:getActReport',
   'codeburn:getModels',
+  'codeburn:getSessions',
+  'codeburn:getCompareModels',
+  'codeburn:getCompare',
   'codeburn:getYield',
   'codeburn:getSpendFlow',
   'codeburn:getDevices',
@@ -44,6 +47,10 @@ const ARGV_CASES: Array<{ channel: string; args: unknown[]; argv: string[] }> = 
   { channel: 'codeburn:getActReport', args: [], argv: ['act', 'report', '--json'] },
   { channel: 'codeburn:getModels', args: ['week', 'claude', true], argv: ['models', '--format', 'json', '--period', 'week', '--provider', 'claude', '--by-task'] },
   { channel: 'codeburn:getModels', args: ['week', 'all', false], argv: ['models', '--format', 'json', '--period', 'week'] },
+  { channel: 'codeburn:getSessions', args: ['week', 'all'], argv: ['sessions', '--format', 'json', '--period', 'week'] },
+  { channel: 'codeburn:getSessions', args: ['30days', 'claude', { from: '2026-07-01', to: '2026-07-11' }], argv: ['sessions', '--format', 'json', '--period', '30days', '--provider', 'claude', '--from', '2026-07-01', '--to', '2026-07-11'] },
+  { channel: 'codeburn:getCompareModels', args: ['month', 'codex'], argv: ['compare', '--format', 'json', '--period', 'month', '--provider', 'codex'] },
+  { channel: 'codeburn:getCompare', args: ['month', 'all', 'model-a', 'model-b'], argv: ['compare', '--format', 'json', '--period', 'month', '--model-a', 'model-a', '--model-b', 'model-b'] },
   { channel: 'codeburn:getYield', args: ['today'], argv: ['yield', '--format', 'json', '--period', 'today'] },
   { channel: 'codeburn:getSpendFlow', args: ['month', 'openai'], argv: ['spend', '--format', 'flow-json', '--period', 'month', '--provider', 'openai'] },
   { channel: 'codeburn:getOverview', args: ['30days', 'all', { from: '2026-07-01', to: '2026-07-11' }], argv: ['status', '--format', 'menubar-json', '--period', '30days', '--from', '2026-07-01', '--to', '2026-07-11'] },
@@ -64,7 +71,7 @@ function flattenMenuItems(items: any[]): any[] {
 }
 
 describe('createBridgeHandlers (channel → argv for all channels)', () => {
-  it('exposes exactly the eleven codeburn:* channels', () => {
+  it('exposes exactly the fourteen codeburn:* channels', () => {
     const handlers = createBridgeHandlers({ spawnCli: vi.fn(), resolveCodeburnPath: () => null })
     expect(Object.keys(handlers).sort()).toEqual([...CHANNELS].sort())
   })

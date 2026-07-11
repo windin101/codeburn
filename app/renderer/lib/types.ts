@@ -359,6 +359,76 @@ export type ActReportJson = {
   }
 }
 
+// ————— src/sessions-report.ts —————
+export type SessionRow = {
+  sessionId: string
+  project: string
+  provider: string
+  models: string[]
+  cost: number
+  savingsUSD: number
+  calls: number
+  turns: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  startedAt: string
+  endedAt: string
+  durationMs: number
+}
+
+// ————— src/compare-stats.ts —————
+export type ModelStats = {
+  model: string
+  calls: number
+  cost: number
+  outputTokens: number
+  inputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  totalTurns: number
+  editTurns: number
+  oneShotTurns: number
+  retries: number
+  selfCorrections: number
+  editCost: number
+  firstSeen: string
+  lastSeen: string
+}
+export type ComparisonRow = {
+  section: string
+  label: string
+  valueA: number | null
+  valueB: number | null
+  formatFn: 'cost' | 'number' | 'percent' | 'decimal'
+  winner: 'a' | 'b' | 'tie' | 'none'
+}
+export type CategoryComparison = {
+  category: string
+  turnsA: number
+  editTurnsA: number
+  oneShotRateA: number | null
+  turnsB: number
+  editTurnsB: number
+  oneShotRateB: number | null
+  winner: 'a' | 'b' | 'tie' | 'none'
+}
+export type WorkingStyleRow = {
+  label: string
+  valueA: number | null
+  valueB: number | null
+  formatFn: ComparisonRow['formatFn']
+}
+export type CompareJsonReport = {
+  period: { label: string; provider: string }
+  modelA: ModelStats
+  modelB: ModelStats
+  metrics: ComparisonRow[]
+  categories: CategoryComparison[]
+  workingStyle: WorkingStyleRow[]
+}
+
 // ————— IPC surface (preload contextBridge → window.codeburn) —————
 
 export interface CodeburnBridge {
@@ -367,6 +437,9 @@ export interface CodeburnBridge {
   getActReport(): Promise<ActReportJson>
   readonly platform: string
   getModels(period: Period, provider: string, byTask: boolean, range?: DateRange): Promise<ModelReportRow[]>
+  getSessions(period: Period, provider: string, range?: DateRange): Promise<SessionRow[]>
+  getCompareModels(period: Period, provider: string): Promise<ModelStats[]>
+  getCompare(period: Period, provider: string, modelA: string, modelB: string): Promise<CompareJsonReport>
   getYield(period: Period, range?: DateRange): Promise<YieldJsonReport>
   getSpendFlow(period: Period, provider: string, range?: DateRange): Promise<SpendFlow>
   getDevices(period: Period): Promise<CombinedUsage>

@@ -4,10 +4,13 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { spawnCli, CliError, nodeManagerDirs } from './cli'
+import { spawnCli, CliError, nodeManagerDirs, resolveCodeburnPath } from './cli'
 
 let dir: string
 const originalBin = process.env.CODEBURN_BIN
+const originalPathDirs = process.env.CODEBURN_PATH_DIRS
+const originalPathFile = process.env.CODEBURN_CLI_PATH_FILE
+const originalViteUrl = process.env.VITE_DEV_SERVER_URL
 
 /** Writes an executable node script and points CODEBURN_BIN at it. */
 function fakeBin(name: string, body: string): string {
@@ -25,7 +28,33 @@ beforeEach(() => {
 afterEach(() => {
   if (originalBin === undefined) delete process.env.CODEBURN_BIN
   else process.env.CODEBURN_BIN = originalBin
+  if (originalPathDirs === undefined) delete process.env.CODEBURN_PATH_DIRS
+  else process.env.CODEBURN_PATH_DIRS = originalPathDirs
+  if (originalPathFile === undefined) delete process.env.CODEBURN_CLI_PATH_FILE
+  else process.env.CODEBURN_CLI_PATH_FILE = originalPathFile
+  if (originalViteUrl === undefined) delete process.env.VITE_DEV_SERVER_URL
+  else process.env.VITE_DEV_SERVER_URL = originalViteUrl
   rmSync(dir, { recursive: true, force: true })
+})
+
+describe('resolveCodeburnPath (Vite development)', () => {
+  it('prefers the executable repo dist/cli.js when the Vite dev server is set', () => {
+    delete process.env.CODEBURN_BIN
+    process.env.CODEBURN_PATH_DIRS = ''
+    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    process.env.VITE_DEV_SERVER_URL = 'http://localhost:5173'
+
+    expect(resolveCodeburnPath()).toMatch(/dist\/cli\.js$/)
+  })
+
+  it('does not return the repo dev CLI outside the Vite dev server', () => {
+    delete process.env.CODEBURN_BIN
+    process.env.CODEBURN_PATH_DIRS = ''
+    process.env.CODEBURN_CLI_PATH_FILE = join(dir, 'no-persisted-path')
+    delete process.env.VITE_DEV_SERVER_URL
+
+    expect(resolveCodeburnPath()).toBeNull()
+  })
 })
 
 describe('spawnCli', () => {
