@@ -17,6 +17,7 @@
   --lav: #9ca4b1;
   --cyan: #606a79;
   --s-opus: #2a78d6;
+  --s-fable: #1baf7a;
   --s-sonnet: #e87ba4;
   --s-haiku: #eda100;
   --s-gpt: #008300;
@@ -66,6 +67,7 @@
     --lav: #9299a5;
     --cyan: #5d6571;
     --s-opus: #3987e5;
+    --s-fable: #199e70;
     --s-sonnet: #d55181;
     --s-haiku: #c98500;
     --s-gpt: #008300;
@@ -96,7 +98,7 @@
   --hair: #262a31; --hair2: #1e2127; --t1: #e6e8ec; --t2: #9aa2ae; --t3: #6b7280;
   --mint: #37b24d; --amber: #f2a60c; --red: #ff6b6b;
   --blue: #7d8592; --purple: #69717e; --lav: #9299a5; --cyan: #5d6571;
-  --s-opus: #3987e5; --s-sonnet: #d55181; --s-haiku: #c98500; --s-gpt: #008300; --s-other: #6b7280;
+  --s-opus: #3987e5; --s-fable: #199e70; --s-sonnet: #d55181; --s-haiku: #c98500; --s-gpt: #008300; --s-other: #6b7280;
   --card-shadow: 0 1px 2px rgba(0,0,0,.24), 0 1px 3px rgba(0,0,0,.30);
   --accent: #f2701c; --bg: #0e1013; --line: #282c33; --line2: #20242a;
   --ink: #e8eaee; --mut: #959ca8; --mut2: #5f6773; --ok: #3ecf8e;
@@ -111,7 +113,7 @@
   --hair: #e3e5ea; --hair2: #eef0f3; --t1: #1a1d23; --t2: #5b6370; --t3: #8b93a1;
   --mint: #2f9e44; --amber: #e8850c; --red: #e03131;
   --blue: #727b89; --purple: #8a93a3; --lav: #9ca4b1; --cyan: #606a79;
-  --s-opus: #2a78d6; --s-sonnet: #e87ba4; --s-haiku: #eda100; --s-gpt: #008300; --s-other: #8b93a1;
+  --s-opus: #2a78d6; --s-fable: #1baf7a; --s-sonnet: #e87ba4; --s-haiku: #eda100; --s-gpt: #008300; --s-other: #8b93a1;
   --card-shadow: 0 1px 2px rgba(20,24,33,.05), 0 1px 3px rgba(20,24,33,.06);
   --accent: #e8590c; --bg: #f5f6f8; --line: #e6e8ec; --line2: #eef0f3;
   --ink: #181b20; --mut: #697181; --mut2: #a2a9b5; --ok: #12805c;
@@ -293,6 +295,7 @@ body { overflow: hidden; background: var(--bg); color: var(--ink); }
 .bars .c.hi .b { background: var(--bar-hi); }
 .bars .c.hi2 .b { background: color-mix(in srgb, var(--bar-hi) 70%, var(--bar)); }
 .s-opus  { background: var(--s-opus); }
+.s-fable { background: var(--s-fable); }
 .s-son   { background: var(--s-sonnet); }
 .s-hai   { background: var(--s-haiku); }
 .s-gpt   { background: var(--s-gpt); }

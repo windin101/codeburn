@@ -2,6 +2,8 @@ import { formatUsd } from '../lib/format'
 import { SERIES_LABELS, type SeriesKey, seriesClassForKey, seriesClassForModel, seriesKeyForModel } from '../lib/modelSeries'
 import type { DailyHistoryEntry } from '../lib/types'
 
+const SERIES_ORDER: readonly SeriesKey[] = ['opus', 'fable', 'haiku', 'gpt', 'sonnet', 'other']
+
 export function StackedBars({ daily }: { daily: DailyHistoryEntry[] }) {
   const presentSeries = new Set<SeriesKey>()
   const maxTotal = Math.max(
@@ -13,14 +15,16 @@ export function StackedBars({ daily }: { daily: DailyHistoryEntry[] }) {
       if (model.cost > 0) presentSeries.add(seriesKeyForModel(model.name))
     }
   }
-  const legendSeries = (['opus', 'sonnet', 'haiku', 'gpt', 'other'] as const).filter(series => presentSeries.has(series))
+  const legendSeries = SERIES_ORDER.filter(series => presentSeries.has(series))
 
   return (
     <div className="sbars-wrap">
       <div className="sbars" aria-label="Daily spend by model">
         {daily.map(day => (
           <div className="c" key={day.date} data-date={day.date} title={`${day.date} · ${formatUsd(day.cost)}`}>
-            {day.topModels.map(model => {
+            {[...day.topModels].sort(
+              (a, b) => SERIES_ORDER.indexOf(seriesKeyForModel(a.name)) - SERIES_ORDER.indexOf(seriesKeyForModel(b.name)),
+            ).map(model => {
               const pct = Math.max(1, (Math.max(0, model.cost) / maxTotal) * 100)
               return (
                 <span

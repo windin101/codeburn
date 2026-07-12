@@ -1,5 +1,6 @@
 export const SERIES_HEX = {
   opus: '#5B8CFF',
+  fable: '#1baf7a',
   sonnet: '#8B7CF6',
   haiku: '#B5A8FF',
   gpt: '#4DD8E6',
@@ -10,6 +11,7 @@ export type SeriesKey = keyof typeof SERIES_HEX
 
 export const SERIES_LABELS: Record<SeriesKey, string> = {
   opus: 'Opus',
+  fable: 'Fable',
   sonnet: 'Sonnet',
   haiku: 'Haiku',
   gpt: 'GPT / Codex',
@@ -18,6 +20,7 @@ export const SERIES_LABELS: Record<SeriesKey, string> = {
 
 const SERIES_CSS_VAR: Record<SeriesKey, string> = {
   opus: 'var(--s-opus)',
+  fable: 'var(--s-fable)',
   sonnet: 'var(--s-sonnet)',
   haiku: 'var(--s-haiku)',
   gpt: 'var(--s-gpt)',
@@ -26,6 +29,7 @@ const SERIES_CSS_VAR: Record<SeriesKey, string> = {
 
 const SERIES_CLASS: Record<SeriesKey, string> = {
   opus: 's-opus',
+  fable: 's-fable',
   sonnet: 's-son',
   haiku: 's-hai',
   gpt: 's-gpt',
@@ -35,6 +39,7 @@ const SERIES_CLASS: Record<SeriesKey, string> = {
 export function seriesKeyForModel(model?: string): SeriesKey {
   const m = (model ?? '').toLowerCase()
   if (m.includes('opus')) return 'opus'
+  if (m.includes('fable')) return 'fable'
   if (m.includes('sonnet')) return 'sonnet'
   if (m.includes('haiku')) return 'haiku'
   if (m.includes('gpt') || m.includes('codex')) return 'gpt'
