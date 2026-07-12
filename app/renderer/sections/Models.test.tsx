@@ -100,6 +100,17 @@ const byTaskRows: ModelReportRow[] = [
     costUSD: 244.12,
     savingsUSD: 61.22,
   },
+  {
+    ...rows[0],
+    category: 'delegation',
+    calls: 120,
+    inputTokens: 8_000_000,
+    outputTokens: 500_000,
+    cacheReadTokens: 6_000_000,
+    totalTokens: 14_500_000,
+    costUSD: 20.88,
+    savingsUSD: 5.18,
+  },
 ]
 
 describe('Models', () => {
@@ -175,6 +186,13 @@ describe('Models', () => {
 
     await waitFor(() => expect(getModels).toHaveBeenCalledWith('week', 'anthropic', true))
     expect(await screen.findByText('coding')).toBeInTheDocument()
+    expect(screen.getByText('delegation')).toBeInTheDocument()
+    expect(screen.getByText('3,520')).toBeInTheDocument()
+    expect(screen.getByText('$265.00')).toBeInTheDocument()
+    expect(screen.getByText('$66.40')).toBeInTheDocument()
     expect(screen.getByText('$244.12')).toBeInTheDocument()
+    expect(screen.getAllByText('Claude Opus 4.8')).toHaveLength(1)
+    expect(document.querySelectorAll('.model-task-group')).toHaveLength(1)
+    expect(document.querySelectorAll('.model-task-row')).toHaveLength(2)
   })
 })

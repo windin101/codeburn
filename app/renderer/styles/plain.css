@@ -291,6 +291,24 @@ body { overflow: hidden; background: var(--bg); color: var(--ink); }
 .phead { border-color: var(--line2); }
 .phead .r.link, a { color: var(--accent); }
 .alias { color: var(--accent); }
+
+/* Models: grouped task lens. */
+.models-by-task { min-width: 660px; }
+.models-by-task .model-task-group + .model-task-group { border-top: 1px solid var(--line2); }
+.models-by-task .model-group-row td {
+  padding-top: 10px; padding-bottom: 10px; border-bottom: 0; background: var(--phead);
+  color: var(--ink); font-weight: 560;
+}
+.models-by-task .model-group-lead { display: flex; align-items: center; gap: 9px; }
+.models-by-task .model-group-row .mdot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.models-by-task .model-group-name { font-size: 13px; font-weight: 600; }
+.models-by-task .model-task-row td { position: relative; border-bottom: 0; }
+.models-by-task .model-task-row td::before {
+  content: ''; position: absolute; top: 0; right: 0; left: 0; height: 1px; background: var(--line2);
+}
+.models-by-task .model-task-row td:first-child { padding-left: 24px; font-weight: 500; }
+.models-by-task .model-task-row td:first-child::before { left: 22px; }
+.models-by-task .model-task-row td:last-child::before { right: 2px; }
 .bars .b, .bars .c.hi .b, .bars .c.hi2 .b { background: var(--bar); box-shadow: none; }
 .bars .c.hi .b { background: var(--bar-hi); }
 .bars .c.hi2 .b { background: color-mix(in srgb, var(--bar-hi) 70%, var(--bar)); }

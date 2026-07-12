@@ -274,7 +274,7 @@ describe('Spend', () => {
     expect(screen.getByText(/gpt-5.5-codex/)).toBeInTheDocument()
     expect(screen.queryByText(/Opus 4.8/)).not.toBeInTheDocument()
     expect(screen.queryByText(/GPT-5.5 Codex/)).not.toBeInTheDocument()
-    expect(screen.getByText(/mobile-app/)).toBeInTheDocument()
+    expect(screen.getByText(/src\/mobile-app/)).toBeInTheDocument()
     expect(screen.queryByText(/Users\/me\/src\/mobile-app/)).not.toBeInTheDocument()
 
     const opusRibbon = container.querySelector('[data-testid="sankey-ribbon"][data-model="claude-opus-4-20260701"]')
