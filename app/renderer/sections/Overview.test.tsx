@@ -340,22 +340,19 @@ describe('Overview', () => {
     expect(screen.getByText('-3% vs June pace')).toBeInTheDocument()
   })
 
-  it('recovers a matched session model for the series dot and sub-line', async () => {
+  it('recovers a matched session model for the sub-line without a series dot', async () => {
     const now = new Date()
     getOverview.mockResolvedValue(makePayload(now))
 
     const { container } = render(<Overview period="30days" provider="all" />)
 
     // parser-service session joins topProjects sessionDetails on
-    // (project|date|calls|cost) → claude-opus-4 → blue dot + model in sub-line.
+    // (project|date|calls|cost) → claude-opus-4 in the sub-line.
     expect(await screen.findByText('Jul 8 · claude-opus-4 · 41 calls')).toBeInTheDocument()
-    const firstDot = container.querySelectorAll('.li')[0].querySelector('.mdot')
-    expect(firstDot?.getAttribute('style')).toContain('var(--s-opus)')
 
-    // pairing-svc has no matching project → neutral dot, model omitted from sub.
+    // pairing-svc has no matching project → model omitted from sub.
     expect(screen.getByText('Jul 7 · 33 calls')).toBeInTheDocument()
-    const secondDot = container.querySelectorAll('.li')[1].querySelector('.mdot')
-    expect(secondDot?.getAttribute('style')).toContain('var(--s-other)')
+    expect(container.querySelectorAll('.ov-sessions-widget .mdot')).toHaveLength(0)
   })
 
   it('disambiguates two same-project/same-day/same-calls sessions by cost', async () => {
@@ -408,9 +405,7 @@ describe('Overview', () => {
 
     expect(await screen.findByText('Jul 8 · claude-opus-4 · 20 calls')).toBeInTheDocument()
     expect(screen.getByText('Jul 8 · claude-haiku-4 · 20 calls')).toBeInTheDocument()
-    const dots = container.querySelectorAll('.li .mdot')
-    expect(dots[0].getAttribute('style')).toContain('var(--s-opus)') // $10 → opus
-    expect(dots[1].getAttribute('style')).toContain('var(--s-haiku)') // $2 → haiku
+    expect(container.querySelectorAll('.ov-sessions-widget .mdot')).toHaveLength(0)
   })
 
   it('shows the first-run locate-CLI state when the binary is missing', async () => {

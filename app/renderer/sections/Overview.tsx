@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { ActivityHeatmap } from '../components/ActivityHeatmap'
-import { ListRow, seriesColorForModel } from '../components/ListRow'
+import { ListRow } from '../components/ListRow'
 import { Panel } from '../components/Panel'
 import { type Polled, usePolled } from '../hooks/usePolled'
 import { formatUsd } from '../lib/format'
@@ -636,7 +636,7 @@ export function OverviewContent({
               {data.current.topSessions.length ? data.current.topSessions.map((session, index) => {
                 const model = modelIndex.get(sessionModelKey(session.project, session.date, session.calls, session.cost))
                 const sub = [formatDay(session.date), model, `${session.calls} calls`].filter(Boolean).join(' · ')
-                return <ListRow key={`${session.project}-${session.date}-${index}`} no={String(index + 1).padStart(2, '0')} dotColor={seriesColorForModel(model)} title={session.project} sub={sub} value={formatUsd(session.cost)} />
+                return <ListRow key={`${session.project}-${session.date}-${index}`} no={String(index + 1).padStart(2, '0')} title={session.project} sub={sub} value={formatUsd(session.cost)} />
               }) : <EmptyNote>No sessions in this range.</EmptyNote>}
             </div>
           </div>
