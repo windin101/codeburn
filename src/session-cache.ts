@@ -82,7 +82,11 @@ export type SessionCache = {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-export const CACHE_VERSION = 4
+// v5: kiro joined the costUSD pass-through allowlist (credit-based pricing).
+// Cached kiro entries from v4 carry costUSD: undefined and would keep being
+// re-priced from estimated tokens forever, since historical session files
+// never change. Bump forces a one-time re-parse so metered credit costs land.
+export const CACHE_VERSION = 5
 
 const CACHE_FILE = 'session-cache.json'
 const TEMP_FILE_MAX_AGE_MS = 5 * 60 * 1000
