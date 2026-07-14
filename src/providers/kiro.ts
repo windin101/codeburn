@@ -244,6 +244,7 @@ function parseChatFile(data: KiroChatFile, sessionId: string, project: string, s
     reasoningTokens: 0,
     webSearchRequests: 0,
     costUSD,
+    costIsEstimated: true,
     tools: [...new Set(allTools)],
     bashCommands: [],
     toolSequence: toolSequence.length > 1 ? toolSequence : undefined,
@@ -335,13 +336,18 @@ function parseModernExecution(data: KiroModernExecution, sourcePath: string, see
     if (found) break
   }
 
-  // Extract tools from usageSummary (reliable structured tool list in current Kiro builds).
-  // usageSummary is an array of per-turn entries with optional usedTools field.
+  // Extract tools and metered credits from usageSummary (reliable structured
+  // data in current Kiro builds). usageSummary is an array of per-turn entries
+  // with optional usedTools and usage (credits, unit "credit") fields — the
+  // v1 predecessor of v2's usage_summary.promptTurnSummaries.
+  let executionCredits = 0
   const usageSummary = data['usageSummary']
   if (Array.isArray(usageSummary)) {
     for (const entry of usageSummary) {
       const rec = asRecord(entry)
       if (!rec) continue
+      const usage = rec['usage']
+      if (typeof usage === 'number' && Number.isFinite(usage)) executionCredits += usage
       const usedTools = rec['usedTools']
       if (Array.isArray(usedTools)) {
         for (const tool of usedTools) {
@@ -368,7 +374,12 @@ function parseModernExecution(data: KiroModernExecution, sourcePath: string, see
 
   const inputTokens = Math.ceil(inputChars / CHARS_PER_TOKEN)
   const outputTokens = Math.ceil(outputChars / CHARS_PER_TOKEN)
-  const costUSD = calculateCost(modelId, inputTokens, outputTokens, 0, 0, 0)
+  // Prefer real metered credits at the public overage rate; fall back to
+  // token-estimated pricing when the execution has no usage data — same
+  // contract as the CLI and v2 parsers.
+  const costUSD = executionCredits > 0
+    ? executionCredits * USD_PER_KIRO_CREDIT
+    : calculateCost(modelId, inputTokens, outputTokens, 0, 0, 0)
   seenKeys.add(dedupKey)
 
   results.push({
@@ -382,6 +393,7 @@ function parseModernExecution(data: KiroModernExecution, sourcePath: string, see
     reasoningTokens: 0,
     webSearchRequests: 0,
     costUSD,
+    costIsEstimated: executionCredits === 0,
     tools: [...new Set(allTools)],
     bashCommands: [],
     timestamp: tsDate.toISOString(),
@@ -450,14 +462,20 @@ function parseCliSession(meta: KiroCliSessionMeta, entries: KiroCliEntry[], seen
     const tsDate = parseKiroTimestamp(timestamp)
     if (!tsDate) { turnIndex++; return }
 
-    // metering_usage values are credits (unit: "credit"), not dollars —
-    // convert at the public overage rate.
-    const costUSD = turnMeta?.metering_usage
-      ? turnMeta.metering_usage.reduce((sum, m) => sum + m.value, 0) * USD_PER_KIRO_CREDIT
-      : 0
-
     const inputTokens = Math.ceil(inputChars / CHARS_PER_TOKEN)
     const outputTokens = Math.ceil(outputChars / CHARS_PER_TOKEN)
+    // metering_usage values are credits (unit: "credit"), not dollars —
+    // convert at the public overage rate. Gate on credits > 0, not array
+    // presence: real sessions carry empty metering_usage arrays (turn still
+    // in flight when the meta was written), which must fall back to
+    // token-estimated pricing — same contract as the v1-execution and v2
+    // parsers.
+    const turnCredits = turnMeta?.metering_usage
+      ? turnMeta.metering_usage.reduce((sum, m) => sum + m.value, 0)
+      : 0
+    const costUSD = turnCredits > 0
+      ? turnCredits * USD_PER_KIRO_CREDIT
+      : calculateCost(modelId, inputTokens, outputTokens, 0, 0, 0)
     seenKeys.add(dedupKey)
 
     results.push({
@@ -471,7 +489,7 @@ function parseCliSession(meta: KiroCliSessionMeta, entries: KiroCliEntry[], seen
       reasoningTokens: 0,
       webSearchRequests: 0,
       costUSD,
-      costIsEstimated: !turnMeta?.metering_usage,
+      costIsEstimated: turnCredits === 0,
       tools: [...new Set(allTools)],
       bashCommands: [],
       timestamp: tsDate.toISOString(),

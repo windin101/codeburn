@@ -728,6 +728,68 @@ describe('kiro provider - CLI session discovery', () => {
     expect(calls[1]!.costUSD).toBeCloseTo(0.06 * 0.04, 4) // 0.06 credits × $0.04/credit
   })
 
+  it('falls back to token-estimated cost for CLI turns without metering_usage', async () => {
+    const sessionId = '44444444-4444-4444-4444-444444444444'
+    const jsonl = [
+      JSON.stringify({ version: '1', kind: 'Prompt', data: { message_id: 'm1', content: [{ kind: 'text', data: 'hi' }], meta: { timestamp: 1700000000 } } }),
+      JSON.stringify({ version: '1', kind: 'AssistantMessage', data: { message_id: 'm2', content: [{ kind: 'text', data: 'x'.repeat(4000) }] } }),
+    ].join('\n')
+
+    await writeFile(join(cliDir, `${sessionId}.jsonl`), jsonl)
+    await writeFile(join(cliDir, `${sessionId}.json`), JSON.stringify({
+      session_id: sessionId,
+      cwd: '/tmp/test-project',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:01:00Z',
+      session_state: {
+        rts_model_state: { model_info: { model_id: 'claude-sonnet-4.6' } },
+        // no conversation_metadata / metering_usage (e.g. turn still in flight)
+      },
+    }))
+
+    const source = { path: join(cliDir, `${sessionId}.jsonl`), project: 'test-project', provider: 'kiro' }
+    const calls: ParsedProviderCall[] = []
+    for await (const call of kiro.createSessionParser(source, new Set()).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    // Token-priced at the session's real model, not $0 — same fallback
+    // contract as the v1-execution and v2 parsers.
+    expect(calls[0]!.costIsEstimated).toBe(true)
+    expect(calls[0]!.costUSD).toBeGreaterThan(0)
+  })
+
+  it('treats an empty metering_usage array as no metering (token fallback, not frozen $0)', async () => {
+    const sessionId = '55555555-5555-5555-5555-555555555555'
+    const jsonl = [
+      JSON.stringify({ version: '1', kind: 'Prompt', data: { message_id: 'm1', content: [{ kind: 'text', data: 'hi' }], meta: { timestamp: 1700000000 } } }),
+      JSON.stringify({ version: '1', kind: 'AssistantMessage', data: { message_id: 'm2', content: [{ kind: 'text', data: 'x'.repeat(4000) }] } }),
+    ].join('\n')
+
+    await writeFile(join(cliDir, `${sessionId}.jsonl`), jsonl)
+    await writeFile(join(cliDir, `${sessionId}.json`), JSON.stringify({
+      session_id: sessionId,
+      cwd: '/tmp/test-project',
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:01:00Z',
+      session_state: {
+        rts_model_state: { model_info: { model_id: 'claude-sonnet-4.6' } },
+        conversation_metadata: {
+          // Observed in real sessions: the turn metadata exists but metering
+          // hasn't landed yet — an empty array, which is truthy.
+          user_turn_metadatas: [{ end_timestamp: '2026-01-01T00:00:30Z', metering_usage: [] }],
+        },
+      },
+    }))
+
+    const source = { path: join(cliDir, `${sessionId}.jsonl`), project: 'test-project', provider: 'kiro' }
+    const calls: ParsedProviderCall[] = []
+    for await (const call of kiro.createSessionParser(source, new Set()).parse()) calls.push(call)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.costIsEstimated).toBe(true)
+    expect(calls[0]!.costUSD).toBeGreaterThan(0)
+  })
+
   it('skips non-jsonl files in CLI directory', async () => {
     await writeFile(join(cliDir, 'something.json'), '{}')
     await writeFile(join(cliDir, 'something.lock'), '')
@@ -826,6 +888,45 @@ describe('kiro provider - context.messages with entries', () => {
     expect(call.tools).toContain('aws_sentral_mcp_search_accounts')
     expect(call.tools).toContain('Bash')
     expect(call.tools).toContain('Read')
+    // usageSummary credits (0.5 + 1.0) price the execution at $0.04/credit
+    expect(call.costUSD).toBeCloseTo(1.5 * 0.04, 8)
+    expect(call.costIsEstimated).toBe(false)
+  })
+
+  it('falls back to token-estimated cost when a modern execution has no usageSummary credits', async () => {
+    const file = JSON.stringify({
+      executionId: 'exec-nocredits-001',
+      workflowType: 'chat-agent',
+      status: 'succeed',
+      startTime: 1777333000000,
+      chatSessionId: 'session-nocredits-001',
+      modelId: 'claude-sonnet-4.6',
+      context: {
+        messages: [
+          { role: 'human', entries: ['hello'] },
+          { role: 'bot', entries: ['x'.repeat(4000)] },
+        ],
+      },
+    })
+
+    const wsHash = 'c'.repeat(32)
+    const subDir = 'e'.repeat(32)
+    await mkdir(join(tmpDir, wsHash, subDir), { recursive: true })
+    await writeFile(join(tmpDir, wsHash, subDir, 'exec-nocredits-001'), file)
+
+    const provider = createKiroProvider(tmpDir, tmpDir, '/nonexistent/cli')
+    const sessions = await provider.discoverSessions()
+    const calls: ParsedProviderCall[] = []
+    for (const source of sessions) {
+      for await (const call of provider.createSessionParser(source, new Set()).parse()) {
+        calls.push(call)
+      }
+    }
+
+    expect(calls).toHaveLength(1)
+    const call = calls[0]!
+    expect(call.costIsEstimated).toBe(true)
+    expect(call.costUSD).toBeGreaterThan(0) // token-estimated at the real model
   })
 
   it('skips execution index files with executions array', async () => {

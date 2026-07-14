@@ -296,6 +296,15 @@ export async function saveCache(cache: SessionCache): Promise<void> {
 }
 
 // ── File Fingerprinting ────────────────────────────────────────────────
+//
+// Fingerprints cover the source's transcript file only. Providers that keep
+// metadata in a companion file (kiro CLI: credits in `<id>.json` next to the
+// `.jsonl`; kiro v2: modelId in `session.json` next to `messages.jsonl`) have
+// a blind spot: a parse that races the companion write caches the turn with
+// fallback values, and if the transcript never changes again (a session's
+// final turn) the entry never invalidates. Mid-session turns self-heal since
+// append-only transcripts keep changing. Fixing this properly means
+// multi-file fingerprints per source.
 
 export async function fingerprintFile(filePath: string): Promise<FileFingerprint | null> {
   try {
