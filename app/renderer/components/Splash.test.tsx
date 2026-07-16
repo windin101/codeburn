@@ -20,8 +20,11 @@ describe('Splash', () => {
     render(<Splash hasData={false} hasError={false} />)
     const el = splashEl()
     expect(el).toBeInTheDocument()
-    // Static under vitest / the closed motion gate: no ignite/pulse class.
+    // Static under vitest / the closed motion gate: no ignite/pulse class,
+    // the static mark instead of the loader video.
     expect(el).not.toHaveClass('splash-lit')
+    expect(el?.querySelector('video')).toBeNull()
+    expect(el?.querySelector('.flamemark')).not.toBeNull()
   })
 
   it('holds the min on-screen time, then crossfades away once data lands', () => {

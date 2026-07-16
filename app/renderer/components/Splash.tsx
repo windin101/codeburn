@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { FlameMark } from './FlameMark'
-import { motionClass, reducedMotion } from '../lib/motion'
+import { motionClass, motionEnabled, reducedMotion } from '../lib/motion'
 import { version } from '../../package.json'
+import loaderVideo from '../assets/splash-loader.mp4'
 
 const MIN_ON_SCREEN_MS = 600
 const CROSSFADE_MS = 250
@@ -55,9 +56,15 @@ export function Splash({ hasData, hasError }: { hasData: boolean; hasError: bool
   const base = phase === 'out' ? 'splash splash-out' : 'splash'
   return createPortal(
     <div className={motionClass(base, 'splash-lit')} aria-hidden="true">
-      <div className="splash-mark">
-        <FlameMark size={76} />
-      </div>
+      {motionEnabled() ? (
+        // The animated burn (checker keyed out, dark canvas baked in), looping
+        // while the first scan runs. Static mark under reduced motion/tests.
+        <video className="splash-video" src={loaderVideo} width={232} height={232} autoPlay muted loop playsInline />
+      ) : (
+        <div className="splash-mark">
+          <FlameMark size={76} />
+        </div>
+      )}
       <div className="splash-word">CodeBurn</div>
       <div className="splash-version">v{version}</div>
     </div>,
