@@ -854,9 +854,9 @@ td:first-child { font-size: var(--fs-body); font-weight: var(--fw-body); }
 .splash {
   position: fixed; inset: 0; z-index: 3000;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
-  /* Fixed dark boot canvas in both themes: the loader video bakes this exact
-     base color (#171310) in place of its keyed background, so the splash and
-     the video must never diverge. Text colors are fixed for the same reason. */
+  /* Fixed dark boot canvas in both themes: the binary-flame art is dark-bodied
+     and needs a dark ground (the alpha loader video floats over the gradient).
+     Text colors are fixed to match the canvas, not the theme. */
   background:
     radial-gradient(120% 80% at 50% 42%, color-mix(in srgb, #f2701c 8%, #171310), #171310 70%);
   opacity: 1; transition: opacity 250ms ease;
