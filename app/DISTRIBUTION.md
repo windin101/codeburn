@@ -21,6 +21,13 @@ Bundling `dist/cli.js` into the app (`extraResources` + spawning it with
 Electron's own binary via `ELECTRON_RUN_AS_NODE`) is the known path to a
 zero-dependency install; not implemented yet.
 
+## Versioning
+
+`app/package.json`'s `version` tracks the CLI's version (root
+`package.json`) — one CodeBurn version across CLI, menubar, and desktop.
+Bump it in the same change that bumps the root version; the splash, the
+About dialog, and the artifact filenames all read it from there.
+
 ## Build
 
 ```sh
