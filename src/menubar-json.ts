@@ -39,6 +39,7 @@ export type ProviderCost = {
 }
 import type { OptimizeResult } from './optimize.js'
 import { getCurrency } from './currency.js'
+import type { GranularHistory } from './granular-history.js'
 
 const TOP_ACTIVITIES_LIMIT = 20
 const TOP_MODELS_LIMIT = 20
@@ -242,6 +243,9 @@ export type MenubarPayload = {
   }
   history: {
     daily: DailyHistoryEntry[]
+    /// Selected-period timeline for the local browser dashboard. Optional for
+    /// compatibility with older peers and non-dashboard payload producers.
+    timeline?: GranularHistory
   }
   /// Active display currency. Payload cost values are raw USD; the client
   /// multiplies by `rate` and prefixes `symbol` at display time. USD =
@@ -323,11 +327,11 @@ function buildProviderDetails(providers: ProviderCost[]): MenubarPayload['curren
     .map(p => ({ id: p.name, label: p.displayName, cost: p.cost }))
 }
 
-function buildHistory(daily: DailyHistoryEntry[] | undefined): MenubarPayload['history'] {
-  if (!daily || daily.length === 0) return { daily: [] }
+function buildHistory(daily: DailyHistoryEntry[] | undefined, timeline?: GranularHistory): MenubarPayload['history'] {
+  if (!daily || daily.length === 0) return { daily: [], ...(timeline ? { timeline } : {}) }
   const sorted = [...daily].sort((a, b) => a.date.localeCompare(b.date))
   const trimmed = sorted.slice(-HISTORY_DAYS_LIMIT)
-  return { daily: trimmed }
+  return { daily: trimmed, ...(timeline ? { timeline } : {}) }
 }
 
 function buildTopProjects(projects: PeriodData['projects']): MenubarPayload['current']['topProjects'] {
@@ -390,6 +394,7 @@ export function buildMenubarPayload(
   routingWaste?: MenubarPayload['current']['routingWaste'],
   breakdowns?: BreakdownArrays,
   claudeConfigs?: ClaudeConfigSelector,
+  granularHistory?: GranularHistory,
 ): MenubarPayload {
   const payload: MenubarPayload = {
     generated: new Date().toISOString(),
@@ -422,7 +427,7 @@ export function buildMenubarPayload(
       mcpServers: breakdowns?.mcpServers ?? [],
     },
     optimize: buildOptimize(optimize),
-    history: buildHistory(dailyHistory),
+    history: buildHistory(dailyHistory, granularHistory),
     currency: (() => {
       const c = getCurrency()
       return { code: c.code, symbol: c.symbol, rate: c.rate }

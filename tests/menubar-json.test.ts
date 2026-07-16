@@ -273,6 +273,28 @@ describe('buildMenubarPayload', () => {
     expect(payload.currency).toEqual({ code: 'USD', symbol: '$', rate: 1 })
   })
 
+  it('preserves the optional selected-period timeline alongside daily history', () => {
+    const timeline = {
+      bucketMinutes: 15,
+      modelSeries: [{ id: 'model_0', label: 'claude-opus-4-6' }],
+      sessionSeries: [{ id: 'session_0', label: 'codeburn · abc123 (claude)' }],
+      points: [{
+        timestamp: '2026-07-15T10:00:00.000Z',
+        cost: 1.5,
+        tokens: 200,
+        models: [{ seriesId: 'model_0', cost: 1.5, tokens: 200 }],
+        sessions: [{ seriesId: 'session_0', cost: 1.5, tokens: 200 }],
+      }],
+    }
+    const payload = buildMenubarPayload(
+      emptyPeriod('Today'), [], null,
+      undefined, undefined, undefined, undefined, undefined,
+      timeline,
+    )
+
+    expect(payload.history).toEqual({ daily: [], timeline })
+  })
+
   it('drops providers with negative cost defensively', () => {
     const providers: ProviderCost[] = [
       { name: 'claude', displayName: 'Claude', cost: 76.45 },
