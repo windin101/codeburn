@@ -1449,6 +1449,8 @@ program
   .command('optimize')
   .description('Find token waste and get exact fixes')
   .option('-p, --period <period>', 'Analysis period: today, week, 30days, month, all', '30days')
+  .option('--from <date>', 'Custom range start (YYYY-MM-DD)')
+  .option('--to <date>', 'Custom range end (YYYY-MM-DD)')
   .option('--provider <provider>', 'Filter by provider (e.g. claude, gemini, cursor, copilot)', 'all')
   .option('--format <format>', 'Output format: text, json', 'text')
   .option('--json', 'Output findings as JSON (alias for --format json)')
@@ -1464,7 +1466,20 @@ program
       process.exit(2)
     }
     await loadPricing()
-    const { range, label } = getDateRange(opts.period)
+    let range: DateRange
+    let label: string
+    if (opts.from || opts.to) {
+      try {
+        range = parseDateRangeFlags(opts.from, opts.to)!
+        label = formatDateRangeLabel(opts.from, opts.to)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.error(`\n  Error: ${message}\n`)
+        process.exit(1)
+      }
+    } else {
+      ({ range, label } = getDateRange(opts.period))
+    }
     const projects = await parseAllSessions(range, opts.provider)
     if (opts.apply) {
       const { runOptimizeApply } = await import('./act/optimize-apply.js')
