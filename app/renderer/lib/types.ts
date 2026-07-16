@@ -8,7 +8,7 @@ export type Period = 'today' | 'week' | '30days' | 'month' | 'all'
 
 export type DateRange = { from: string; to: string }
 
-export type CliErrorKind = 'not-found' | 'nonzero' | 'bad-json' | 'timeout'
+export type CliErrorKind = 'not-found' | 'nonzero' | 'bad-json' | 'timeout' | 'too-large' | 'bad-args'
 
 /** Structured failure surfaced across the IPC boundary as plain data. */
 export interface CliError {
@@ -489,7 +489,7 @@ export type CompareJsonReport = {
 // ————— IPC surface (preload contextBridge → window.codeburn) —————
 
 export interface CodeburnBridge {
-  getQuota(): Promise<QuotaProvider[]>
+  getQuota(force?: boolean): Promise<QuotaProvider[]>
   getOverview(period: Period, provider: string, range?: DateRange): Promise<MenubarPayload>
   getPlans(period: Period): Promise<StatusJson>
   getActReport(): Promise<ActReportJson>

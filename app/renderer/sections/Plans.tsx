@@ -1,3 +1,5 @@
+import { useRef } from 'react'
+
 import { CliErrorPanel } from '../components/CliErrorPanel'
 import { Panel } from '../components/Panel'
 import type { Section } from '../components/Sidebar'
@@ -58,7 +60,14 @@ function manualPlanSummaries(status: StatusJson): JsonPlanSummary[] {
 }
 
 export function Plans({ period, refreshToken = 0, onNavigate }: { period: Period; refreshToken?: number; onNavigate?: (section: Section, pane?: SettingsPane) => void }) {
-  const quota = usePolled<QuotaProvider[]>(() => codeburn.getQuota(), [refreshToken])
+  // Force a fresh fetch (bypassing QuotaService's 2-min cache) only when the
+  // user hits refresh; the steady 30s poll keeps serving cached quota.
+  const lastForcedToken = useRef(refreshToken)
+  const quota = usePolled<QuotaProvider[]>(() => {
+    const force = refreshToken !== lastForcedToken.current
+    lastForcedToken.current = refreshToken
+    return codeburn.getQuota(force)
+  }, [refreshToken])
   const budgetReport = usePolled<StatusJson>(() => codeburn.getPlans(period), [period, refreshToken])
   const manualPlans = budgetReport.data ? manualPlanSummaries(budgetReport.data) : []
 

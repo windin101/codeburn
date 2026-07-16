@@ -26,6 +26,20 @@ describe('QuotaService', () => {
     expect(codex).toHaveBeenCalledTimes(2)
   })
 
+  it('force re-fetches within the cache window by invalidating first', async () => {
+    const claude = vi.fn(async () => ({ quota: quota('claude') }))
+    const codex = vi.fn(async () => ({ quota: quota('codex') }))
+    const service = new QuotaService({
+      claude, codex, now: () => 1000, refreshMs: 120_000,
+      readFile: vi.fn(async () => null), writeFile: vi.fn(async () => undefined),
+    })
+    await service.getQuota()
+    await service.getQuota() // fresh cache, no re-fetch
+    expect(claude).toHaveBeenCalledTimes(1)
+    await service.getQuota({ force: true }) // force clears the still-fresh cache
+    expect(claude).toHaveBeenCalledTimes(2)
+  })
+
   it('single-flights simultaneous callers', async () => {
     let release!: () => void
     const pending = new Promise<void>(resolve => { release = resolve })

@@ -1,10 +1,10 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, chmodSync } from 'node:fs'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, chmodSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { spawnCli, spawnCliAction, CliError, nodeManagerDirs, resolveCodeburnPath } from './cli'
+import { spawnCli, spawnCliAction, killAll, CliError, nodeManagerDirs, resolveCodeburnPath } from './cli'
 
 let dir: string
 const originalBin = process.env.CODEBURN_BIN
@@ -107,6 +107,64 @@ describe('spawnCli', () => {
       delete process.env.CODEBURN_PATH_DIRS
       delete process.env.CODEBURN_CLI_PATH_FILE
     }
+  })
+
+  it('rejects with kind "too-large" and kills a binary that floods stdout', async () => {
+    fakeBin('flood.js', "const s='x'.repeat(1024*1024); for(let i=0;i<20;i++) process.stdout.write(s); setInterval(()=>{},1000)")
+    await expect(spawnCli(['status'])).rejects.toMatchObject({ kind: 'too-large' } satisfies Partial<CliError>)
+  })
+})
+
+describe('spawnCli coalescing (read-only)', () => {
+  it('shares one child between two concurrent identical calls', async () => {
+    const countFile = join(dir, 'spawns')
+    fakeBin('counter.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+    const [a, b] = await Promise.all([spawnCli(['status']), spawnCli(['status'])])
+    expect(a).toEqual({ ok: 1 })
+    expect(b).toEqual({ ok: 1 })
+    expect(readFileSync(countFile, 'utf8')).toBe('x') // exactly one spawn
+  })
+
+  it('spawns again once the 5s result cache has expired', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    try {
+      const countFile = join(dir, 'spawns')
+      fakeBin('counter-ttl.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+      vi.setSystemTime(0)
+      await spawnCli(['status'])
+      vi.setSystemTime(6_000)
+      await spawnCli(['status'])
+      expect(readFileSync(countFile, 'utf8')).toBe('xx') // cache expired → new spawn
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('never coalesces config-mutating action calls', async () => {
+    const countFile = join(dir, 'spawns')
+    fakeBin('action-counter.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write('done')`)
+    await Promise.all([spawnCliAction(['currency', 'EUR']), spawnCliAction(['currency', 'EUR'])])
+    expect(readFileSync(countFile, 'utf8')).toBe('xx') // two independent spawns
+  })
+
+  it('flushes the read cache when an action completes, so post-action refetches are fresh', async () => {
+    const countFile = join(dir, 'spawns')
+    fakeBin('mixed.js', `require('fs').appendFileSync(${JSON.stringify(countFile)},'x'); process.stdout.write(JSON.stringify({ok:1}))`)
+    await spawnCli(['model-alias', '--list']) // primes the 5s cache
+    await spawnCliAction(['model-alias', 'a', 'b']) // config change → cache flush
+    await spawnCli(['model-alias', '--list']) // must NOT serve the pre-action cache
+    expect(readFileSync(countFile, 'utf8')).toBe('xxx')
+  })
+})
+
+describe('killAll', () => {
+  it('reaps an in-flight child so its promise settles', async () => {
+    fakeBin('hang-kill.js', 'setInterval(() => {}, 1000)')
+    const pending = spawnCli(['status'], { timeoutMs: 60_000 })
+    // Let the child spawn before reaping.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    killAll()
+    await expect(pending).rejects.toMatchObject({ kind: 'nonzero' })
   })
 })
 

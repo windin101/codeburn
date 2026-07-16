@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeTheme, shell, type MenuItemConstructorOptions } from 'electron'
 import path from 'node:path'
 
-import { CliError, resolveCodeburnPath, spawnCli, spawnCliAction, type ActionResult } from './cli'
+import { CliError, killAll, resolveCodeburnPath, spawnCli, spawnCliAction, type ActionResult } from './cli'
 import { getQuota, sanitizeError } from './quota'
 
 // Result envelope: handlers never throw across IPC so the structured error
@@ -18,9 +18,41 @@ function rangeArgs(range: DateRange | undefined): string[] {
   return range ? ['--from', range.from, '--to', range.to] : []
 }
 
+// Renderer-supplied strings become argv, so reject anything that could smuggle a
+// flag or shell metacharacter before it reaches the CLI. Thrown from the argv
+// builders, these surface through the same error envelope as any CliError.
+const PERIODS = new Set(['today', 'week', '30days', 'month', 'all'])
+function vPeriod(period: string): string {
+  if (!PERIODS.has(period)) throw new CliError('bad-args', 'invalid period')
+  return period
+}
+function vProvider(provider: string): string {
+  if (!/^[a-z0-9-]+$/.test(provider)) throw new CliError('bad-args', 'invalid provider')
+  return provider
+}
+function vRange(range: DateRange | undefined): DateRange | undefined {
+  if (range && (!/^\d{4}-\d{2}-\d{2}$/.test(range.from) || !/^\d{4}-\d{2}-\d{2}$/.test(range.to))) {
+    throw new CliError('bad-args', 'invalid date range')
+  }
+  return range
+}
+function vCurrency(code: string): string {
+  if (!/^[A-Z]{3}$/.test(code)) throw new CliError('bad-args', 'invalid currency code')
+  return code
+}
+/** model/alias/device/plan tokens: must not be read as a CLI flag. */
+function vToken(value: string): string {
+  if (value.startsWith('-')) throw new CliError('bad-args', 'argument must not start with "-"')
+  return value
+}
+function vOutPath(outPath: string): string {
+  if (outPath.startsWith('-') || !path.isAbsolute(outPath)) throw new CliError('bad-args', 'export path must be absolute')
+  return outPath
+}
+
 function toEnvelopeError(err: unknown): { kind: string; message: string } {
-  if (err instanceof CliError) return { kind: err.kind, message: err.message }
-  return { kind: 'nonzero', message: err instanceof Error ? err.message : String(err) }
+  if (err instanceof CliError) return { kind: err.kind, message: sanitizeError(err.message) }
+  return { kind: 'nonzero', message: sanitizeError(err instanceof Error ? err.message : String(err)) }
 }
 
 type Deps = {
@@ -47,58 +79,59 @@ export function createBridgeHandlers(deps: Deps = { spawnCli, spawnCliAction, re
   }
   const runAction = (build: (...args: any[]) => string[]): Handler => async (...args: any[]) => {
     try {
-      return { ok: true, value: await deps.spawnCliAction(build(...args)) }
+      const result = await deps.spawnCliAction(build(...args))
+      return { ok: true, value: { ...result, stderr: sanitizeError(result.stderr) } }
     } catch (err) {
       return { ok: false, error: toEnvelopeError(err) }
     }
   }
 
   return {
-    'codeburn:getQuota': async () => {
-      try { return { ok: true, value: await deps.getQuota() } }
+    'codeburn:getQuota': async (force?: boolean) => {
+      try { return { ok: true, value: await deps.getQuota({ force: Boolean(force) }) } }
       catch (error) { return { ok: false, error: { kind: 'nonzero', message: sanitizeError(error) } } }
     },
     'codeburn:getOverview': run((period: string, provider: string, range?: DateRange) => [
-      'status', '--format', 'menubar-json', '--period', period, ...providerArgs(provider), ...rangeArgs(range),
+      'status', '--format', 'menubar-json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getPlans': run((period: string) => ['status', '--format', 'json', '--period', period]),
+    'codeburn:getPlans': run((period: string) => ['status', '--format', 'json', '--period', vPeriod(period)]),
     'codeburn:getActReport': run(() => ['act', 'report', '--json']),
     'codeburn:getModels': run((period: string, provider: string, byTask: boolean, range?: DateRange) => [
-      'models', '--format', 'json', '--period', period, ...providerArgs(provider), ...(byTask ? ['--by-task'] : []), ...rangeArgs(range),
+      'models', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...(byTask ? ['--by-task'] : []), ...rangeArgs(vRange(range)),
     ]),
     'codeburn:getSessions': run((period: string, provider: string, range?: DateRange) => [
-      'sessions', '--format', 'json', '--period', period, ...providerArgs(provider), ...rangeArgs(range),
+      'sessions', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
     'codeburn:getCompareModels': run((period: string, provider: string) => [
-      'compare', '--format', 'json', '--period', period, ...providerArgs(provider),
+      'compare', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)),
     ]),
     'codeburn:getCompare': run((period: string, provider: string, modelA: string, modelB: string) => [
-      'compare', '--format', 'json', '--period', period, ...providerArgs(provider), '--model-a', modelA, '--model-b', modelB,
+      'compare', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), '--model-a', vToken(modelA), '--model-b', vToken(modelB),
     ]),
     'codeburn:getYield': run((period: string, provider: string, range?: DateRange) => [
-      'yield', '--format', 'json', '--period', period, ...providerArgs(provider), ...rangeArgs(range),
+      'yield', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
     'codeburn:getSpendFlow': run((period: string, provider: string, range?: DateRange) => [
-      'spend', '--format', 'flow-json', '--period', period, ...providerArgs(provider), ...rangeArgs(range),
+      'spend', '--format', 'flow-json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
     'codeburn:getOptimizeReport': run((period: string, provider: string, range?: DateRange) => [
-      'optimize', '--format', 'json', '--period', period, ...providerArgs(provider), ...rangeArgs(range),
+      'optimize', '--format', 'json', '--period', vPeriod(period), ...providerArgs(vProvider(provider)), ...rangeArgs(vRange(range)),
     ]),
-    'codeburn:getDevices': run((period: string) => ['devices', '--format', 'json', '--period', period]),
+    'codeburn:getDevices': run((period: string) => ['devices', '--format', 'json', '--period', vPeriod(period)]),
     'codeburn:getDevicesScan': run(() => ['devices', 'scan', '--format', 'json']),
     'codeburn:getShareStatus': run(() => ['share', 'status', '--format', 'json']),
     'codeburn:getIdentity': run(() => ['identity', '--format', 'json']),
     'codeburn:getAliases': run(() => ['model-alias', '--list', '--format', 'json']),
     'codeburn:getProxyPaths': run(() => ['proxy-path', '--list', '--format', 'json']),
-    'codeburn:setCurrency': runAction((code: string) => ['currency', code]),
+    'codeburn:setCurrency': runAction((code: string) => ['currency', vCurrency(code)]),
     'codeburn:resetCurrency': runAction(() => ['currency', '--reset']),
-    'codeburn:addAlias': runAction((from: string, to: string) => ['model-alias', from, to]),
-    'codeburn:removeAlias': runAction((from: string) => ['model-alias', '--remove', from]),
-    'codeburn:removeDevice': runAction((name: string) => ['devices', 'rm', name]),
-    'codeburn:setPlan': runAction((id: string, provider: string) => ['plan', 'set', id, '--provider', provider]),
-    'codeburn:resetPlan': runAction((provider: string) => ['plan', 'reset', '--provider', provider]),
+    'codeburn:addAlias': runAction((from: string, to: string) => ['model-alias', vToken(from), vToken(to)]),
+    'codeburn:removeAlias': runAction((from: string) => ['model-alias', '--remove', vToken(from)]),
+    'codeburn:removeDevice': runAction((name: string) => ['devices', 'rm', vToken(name)]),
+    'codeburn:setPlan': runAction((id: string, provider: string) => ['plan', 'set', vToken(id), '--provider', vProvider(provider)]),
+    'codeburn:resetPlan': runAction((provider: string) => ['plan', 'reset', '--provider', vProvider(provider)]),
     'codeburn:exportData': runAction((format: string, provider: string, outPath: string) => [
-      'export', '-f', format, '-o', outPath, '--provider', provider,
+      'export', '-f', vToken(format), '-o', vOutPath(outPath), '--provider', vProvider(provider),
     ]),
     'codeburn:cliStatus': async () => {
       const p = deps.resolveCodeburnPath()
@@ -116,7 +149,13 @@ function registerHandlers(): void {
     const res = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
     return { ok: true, value: res.canceled ? null : (res.filePaths[0] ?? null) }
   })
-  ipcMain.handle('open-external', (_event, url: string) => shell.openExternal(url))
+  ipcMain.handle('open-external', (_event, url: string) => {
+    try {
+      const { protocol } = new URL(url)
+      if (protocol === 'https:' || protocol === 'http:') return shell.openExternal(url)
+    } catch { /* malformed URL — refuse to open */ }
+    return
+  })
 }
 
 export function createApplicationMenuTemplate(isDev = Boolean(process.env.VITE_DEV_SERVER_URL)): MenuItemConstructorOptions[] {
@@ -215,17 +254,43 @@ function createWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
 
+  // This window only ever renders the bundled renderer; block in-page navigation
+  // and popups so a hijacked link can't turn it into a browser.
+  win.webContents.on('will-navigate', event => event.preventDefault())
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
+    console.error(`Renderer failed to load (${errorCode}): ${errorDescription}`)
+  })
+
   const devUrl = process.env.VITE_DEV_SERVER_URL
   if (devUrl) {
-    void win.loadURL(devUrl)
+    win.loadURL(devUrl).catch(err => console.error('Failed to load dev server URL:', err))
   } else {
-    void win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'))
+    win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html')).catch(err => console.error('Failed to load renderer:', err))
   }
 
   return win
 }
 
 function bootstrap(): void {
+  process.on('unhandledRejection', reason => {
+    console.error('Unhandled promise rejection in main process:', reason)
+  })
+
+  // A second launch focuses the running window instead of opening a rival one.
+  if (!app.requestSingleInstanceLock()) {
+    app.quit()
+    return
+  }
+  app.on('second-instance', () => {
+    const [win] = BrowserWindow.getAllWindows()
+    if (!win) return
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  })
+
+  app.on('before-quit', () => killAll())
+
   void app.whenReady().then(() => {
     registerHandlers()
     installApplicationMenu()

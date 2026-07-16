@@ -44,14 +44,18 @@ export class QuotaService {
 
   constructor(deps: Partial<QuotaDeps> = {}) { this.deps = { ...defaultDeps, ...deps } }
 
-  invalidate(provider: ProviderName): void {
-    this.generations[provider] += 1
-    this.controllers[provider]?.abort()
-    this.controllers[provider] = undefined
+  invalidate(provider?: ProviderName): void {
+    const providers: ProviderName[] = provider ? [provider] : ['claude', 'codex']
+    for (const p of providers) {
+      this.generations[p] += 1
+      this.controllers[p]?.abort()
+      this.controllers[p] = undefined
+    }
     this.cache = null
   }
 
   async getQuota(options: { force?: boolean; allowClaudeKeychain?: boolean } = {}): Promise<QuotaProvider[]> {
+    if (options.force) this.invalidate()
     if (!options.force && this.cache && this.deps.now() - this.cache.at < this.deps.refreshMs) return this.cache.value
     if (this.flight) return this.flight
     this.flight = this.fetchAll(Boolean(options.allowClaudeKeychain)).finally(() => { this.flight = null })
@@ -111,4 +115,4 @@ export class QuotaService {
 }
 
 export const quotaService = new QuotaService()
-export const getQuota = (): Promise<QuotaProvider[]> => quotaService.getQuota()
+export const getQuota = (options: { force?: boolean } = {}): Promise<QuotaProvider[]> => quotaService.getQuota(options)

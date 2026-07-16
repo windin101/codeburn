@@ -173,6 +173,58 @@ describe('createBridgeHandlers (IPC wiring)', () => {
   })
 })
 
+describe('createBridgeHandlers (IPC input validation)', () => {
+  const withQuota = <T extends object>(value: T) => ({ ...value, getQuota: vi.fn(async () => []) })
+  const REJECTIONS: Array<{ name: string; channel: string; args: unknown[] }> = [
+    { name: 'unknown period', channel: 'codeburn:getOverview', args: ['yesterday', 'all'] },
+    { name: 'provider with shell metacharacters', channel: 'codeburn:getOverview', args: ['30days', 'claude; rm -rf'] },
+    { name: 'uppercase provider', channel: 'codeburn:getModels', args: ['week', 'Claude', false] },
+    { name: 'malformed date range', channel: 'codeburn:getYield', args: ['today', 'all', { from: '2026/07/01', to: '2026-07-11' }] },
+    { name: 'lowercase currency code', channel: 'codeburn:setCurrency', args: ['eur'] },
+    { name: 'alias token that looks like a flag', channel: 'codeburn:addAlias', args: ['--evil', 'safe'] },
+    { name: 'device name that looks like a flag', channel: 'codeburn:removeDevice', args: ['-rf'] },
+    { name: 'relative export path', channel: 'codeburn:exportData', args: ['json', 'all', 'relative/out'] },
+    { name: 'compare model that looks like a flag', channel: 'codeburn:getCompare', args: ['month', 'all', '-a', 'model-b'] },
+  ]
+
+  it.each(REJECTIONS)('rejects $name with a bad-args envelope and never spawns', async ({ channel, args }) => {
+    const { spawnCli, spawnCliAction } = fakeSpawn()
+    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn' }))
+    const res = await handlers[channel]!(...args)
+    expect(res).toMatchObject({ ok: false, error: { kind: 'bad-args' } })
+    expect(spawnCli).not.toHaveBeenCalled()
+    expect(spawnCliAction).not.toHaveBeenCalled()
+  })
+
+  it('still accepts the valid values those cases mutate', async () => {
+    const { spawnCli, spawnCliAction, calls } = fakeSpawn()
+    const handlers = createBridgeHandlers(withQuota({ spawnCli, spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn' }))
+    await handlers['codeburn:exportData']!('json', 'all', '/tmp/out')
+    expect(calls[0]).toEqual(['export', '-f', 'json', '-o', '/tmp/out', '--provider', 'all'])
+  })
+})
+
+describe('createBridgeHandlers (quota force + redaction)', () => {
+  it('threads the renderer force flag into getQuota', async () => {
+    const base = { spawnCli: vi.fn(), spawnCliAction: vi.fn(), resolveCodeburnPath: () => null }
+    const getQuota = vi.fn(async () => [])
+    const handlers = createBridgeHandlers({ ...base, getQuota })
+    await handlers['codeburn:getQuota']!(true)
+    expect(getQuota).toHaveBeenLastCalledWith({ force: true })
+    await handlers['codeburn:getQuota']!()
+    expect(getQuota).toHaveBeenLastCalledWith({ force: false })
+  })
+
+  it('redacts secrets in ActionResult.stderr before it crosses IPC', async () => {
+    const spawnCliAction = vi.fn(async () => ({ ok: false, stdout: '', stderr: 'auth failed: Bearer sk-ant-leak12345', code: 1 }))
+    const handlers = createBridgeHandlers({ spawnCli: vi.fn(), spawnCliAction, resolveCodeburnPath: () => '/bin/codeburn', getQuota: vi.fn(async () => []) })
+    const res = await handlers['codeburn:setCurrency']!('EUR') as { ok: true; value: { stderr: string } }
+    expect(res.ok).toBe(true)
+    expect(res.value.stderr).not.toMatch(/sk-ant-leak|Bearer sk-ant/)
+    expect(res.value.stderr).toContain('[REDACTED]')
+  })
+})
+
 describe('createApplicationMenuTemplate', () => {
   it('keeps normal app roles while leaving CmdOrCtrl+R for renderer refresh', () => {
     const items = flattenMenuItems(createApplicationMenuTemplate(false))

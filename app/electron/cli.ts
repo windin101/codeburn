@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { accessSync, constants, existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir, platform } from 'node:os'
 import { delimiter, join } from 'node:path'
@@ -6,7 +6,7 @@ import { delimiter, join } from 'node:path'
 // Runs entirely in the Electron main process. This module must NOT import
 // `electron` so it stays unit-testable in a plain node environment.
 
-export type CliErrorKind = 'not-found' | 'nonzero' | 'bad-json' | 'timeout'
+export type CliErrorKind = 'not-found' | 'nonzero' | 'bad-json' | 'timeout' | 'too-large' | 'bad-args'
 export type ActionResult = { ok: boolean; stdout: string; stderr: string; code: number | null }
 
 /** Structured failure so the renderer can pick the right empty/permission state. */
@@ -20,6 +20,22 @@ export class CliError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 45_000
+// A runaway CLI (or a compromised binary) must not exhaust main-process memory.
+const MAX_OUTPUT_BYTES = 16 * 1024 * 1024
+// Same-cadence pollers fire near-identical read spawns; share one child and hold
+// its result briefly so six overview hooks don't launch six processes at once.
+const COALESCE_TTL_MS = 5_000
+
+// Every live child so `before-quit` can reap them (Electron does not on macOS).
+const activeChildren = new Set<ChildProcess>()
+const readInflight = new Map<string, Promise<unknown>>()
+const readCache = new Map<string, { at: number; value: unknown }>()
+
+/** SIGKILL every in-flight child. Wired to Electron's `before-quit`. */
+export function killAll(): void {
+  for (const child of activeChildren) child.kill('SIGKILL')
+  activeChildren.clear()
+}
 
 // Homebrew + common Node version managers, mirroring mac/CodeburnCLI.swift so a
 // GUI-launched app (minimal PATH) still finds a globally-installed `codeburn`.
@@ -133,32 +149,20 @@ export function resolveCodeburnPath(): string | null {
   return null
 }
 
-/**
- * Spawn `codeburn <args>` with plain argv (never a shell), collect stdout, and
- * decode it as JSON. Rejects with a structured {@link CliError}:
- *   not-found  no binary resolved
- *   nonzero    process exited with a non-zero code (stderr surfaced)
- *   bad-json   stdout was not valid JSON
- *   timeout    the process was killed after `timeoutMs`
- */
-export function spawnCli(args: string[], opts: { timeoutMs?: number } = {}): Promise<unknown> {
-  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
+function runCli(bin: string, args: string[], timeoutMs: number): Promise<unknown> {
   return new Promise<unknown>((resolve, reject) => {
-    const bin = resolveCodeburnPath()
-    if (!bin) {
-      reject(new CliError('not-found', 'codeburn CLI not found'))
-      return
-    }
-
     const child = spawn(bin, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
+    activeChildren.add(child)
     let stdout = ''
     let stderr = ''
+    let total = 0
     let settled = false
 
     const finish = (fn: () => void) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      activeChildren.delete(child)
       fn()
     }
 
@@ -169,8 +173,18 @@ export function spawnCli(args: string[], opts: { timeoutMs?: number } = {}): Pro
       })
     }, timeoutMs)
 
-    child.stdout.on('data', chunk => { stdout += chunk })
-    child.stderr.on('data', chunk => { stderr += chunk })
+    const bump = (n: number) => {
+      total += n
+      if (total > MAX_OUTPUT_BYTES) {
+        finish(() => {
+          child.kill('SIGKILL')
+          reject(new CliError('too-large', `codeburn ${args[0] ?? ''} produced more than ${MAX_OUTPUT_BYTES} bytes`))
+        })
+      }
+    }
+
+    child.stdout.on('data', chunk => { stdout += chunk; bump(chunk.length) })
+    child.stderr.on('data', chunk => { stderr += chunk; bump(chunk.length) })
 
     child.on('error', err => {
       finish(() => reject(new CliError('not-found', err.message)))
@@ -192,6 +206,35 @@ export function spawnCli(args: string[], opts: { timeoutMs?: number } = {}): Pro
   })
 }
 
+/**
+ * Spawn `codeburn <args>` with plain argv (never a shell), collect stdout, and
+ * decode it as JSON. Rejects with a structured {@link CliError}:
+ *   not-found  no binary resolved
+ *   nonzero    process exited with a non-zero code (stderr surfaced)
+ *   bad-json   stdout was not valid JSON
+ *   timeout    the process was killed after `timeoutMs`
+ *   too-large  stdout+stderr exceeded {@link MAX_OUTPUT_BYTES}
+ *
+ * Read-only, so concurrent identical calls share one child and a 5s result cache
+ * absorbs same-cadence pollers. Never use this for config-mutating commands.
+ */
+export function spawnCli(args: string[], opts: { timeoutMs?: number } = {}): Promise<unknown> {
+  const bin = resolveCodeburnPath()
+  if (!bin) return Promise.reject(new CliError('not-found', 'codeburn CLI not found'))
+
+  const key = JSON.stringify([bin, ...args])
+  const cached = readCache.get(key)
+  if (cached && Date.now() - cached.at < COALESCE_TTL_MS) return Promise.resolve(cached.value)
+  const existing = readInflight.get(key)
+  if (existing) return existing
+
+  const flight = runCli(bin, args, opts.timeoutMs ?? DEFAULT_TIMEOUT_MS)
+    .then(value => { readCache.set(key, { at: Date.now(), value }); return value })
+    .finally(() => { readInflight.delete(key) })
+  readInflight.set(key, flight)
+  return flight
+}
+
 /** Spawn a config-mutating CLI command and return its text output verbatim. */
 export function spawnCliAction(args: string[], opts: { timeoutMs?: number } = {}): Promise<ActionResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS
@@ -203,6 +246,7 @@ export function spawnCliAction(args: string[], opts: { timeoutMs?: number } = {}
     }
 
     const child = spawn(bin, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
+    activeChildren.add(child)
     let stdout = ''
     let stderr = ''
     let settled = false
@@ -211,6 +255,10 @@ export function spawnCliAction(args: string[], opts: { timeoutMs?: number } = {}
       if (settled) return
       settled = true
       clearTimeout(timer)
+      activeChildren.delete(child)
+      // The action may have changed config the read cache still reflects; a
+      // Settings refetch fires immediately after, so serve it fresh data.
+      readCache.clear()
       resolve(result)
     }
 

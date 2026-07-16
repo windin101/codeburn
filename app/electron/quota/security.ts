@@ -17,7 +17,9 @@ export function sanitizeError(error: unknown): string {
 
 function assertSafeMode(stats: Stats, filePath: string): void {
   if (!stats.isFile()) throw new Error(`Credential path is not a regular file: ${filePath}`)
-  if ((stats.mode & 0o077) !== 0) throw new Error(`Credential file permissions are too broad: ${filePath}`)
+  // POSIX mode bits are meaningless for Windows ACLs, where stats.mode would
+  // otherwise reject every credential file.
+  if (process.platform !== 'win32' && (stats.mode & 0o077) !== 0) throw new Error(`Credential file permissions are too broad: ${filePath}`)
 }
 
 export async function readSecureFile(filePath: string, maxBytes = 64 * 1024): Promise<string | null> {

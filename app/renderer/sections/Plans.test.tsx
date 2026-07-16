@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { setActiveCurrency } from '../lib/format'
@@ -8,7 +8,7 @@ import { Plans } from './Plans'
 
 const { getPlans, getQuota } = vi.hoisted(() => ({
   getPlans: vi.fn<(period: string) => Promise<StatusJson>>(),
-  getQuota: vi.fn<() => Promise<QuotaProvider[]>>(),
+  getQuota: vi.fn<(force?: boolean) => Promise<QuotaProvider[]>>(),
 }))
 vi.mock('../lib/ipc', async orig => {
   const actual = await orig<typeof import('../lib/ipc')>()
@@ -216,6 +216,22 @@ describe('Plans', () => {
 
     expect(await screen.findByText('€20.00 / month · cursor')).toBeInTheDocument()
     expect(screen.getByText('€8.20 · 41%')).toBeInTheDocument()
+  })
+
+  it('forces a quota refresh only when refreshToken changes, not on the steady poll', async () => {
+    getPlans.mockResolvedValue(statusWithPlans)
+
+    const { rerender } = render(<Plans period="30days" refreshToken={0} />)
+    await screen.findByText('Max 20x')
+    expect(getQuota).toHaveBeenCalledWith(false) // mount is a steady poll
+    getQuota.mockClear()
+
+    rerender(<Plans period="30days" refreshToken={1} />) // manual refresh bumps the token
+    await waitFor(() => expect(getQuota).toHaveBeenCalledWith(true))
+
+    getQuota.mockClear()
+    rerender(<Plans period="30days" refreshToken={1} />) // unchanged token must not re-force
+    for (const call of getQuota.mock.calls) expect(call[0]).toBe(false)
   })
 
   it('renders permission-denied CLI failures as the amber Full Disk Access state', async () => {
