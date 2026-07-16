@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary'
 import { Hint } from './components/Hint'
 import { Panel } from './components/Panel'
 import { Sidebar, type Section } from './components/Sidebar'
+import { Splash } from './components/Splash'
 import { ToastHost } from './components/ToastHost'
 import { rangeLabel, TopBar } from './components/TopBar'
 import { Window } from './components/Window'
@@ -218,6 +219,7 @@ export function App() {
     <Window>
       <Sidebar active={section} onNavigate={navigate} status={<StatusLine polled={overview} />} />
       <ToastHost />
+      <Splash hasData={overview.data != null} hasError={overview.error != null} />
       <div className="ct">
         <DailyBudgetBanner payload={overview.data ?? null} provider={provider} />
         <ErrorBoundary key={section}>

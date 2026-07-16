@@ -26,4 +26,12 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: /Models/ })).toHaveClass('on')
     expect(screen.getByRole('button', { name: /Overview/ })).not.toHaveClass('on')
   })
+
+  it('renders the brand flame mark, static under the closed motion gate', () => {
+    const { container } = render(<Sidebar active="overview" onNavigate={() => {}} />)
+    const flame = container.querySelector('.app .flamemark')
+    expect(flame?.tagName.toLowerCase()).toBe('svg')
+    // motionEnabled() is off under vitest, so the idle flicker never attaches.
+    expect(container.querySelector('.fm-flicker')).toBeNull()
+  })
 })

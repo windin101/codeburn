@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from 'react'
 
-import flameLogo from '../assets/flame.png'
 import { codeburn } from '../lib/ipc'
 import { AboutModal, type SocialLink } from './AboutModal'
+import { FlameMark } from './FlameMark'
 
 export type Section = 'overview' | 'sessions' | 'spend' | 'optimize' | 'models' | 'compare' | 'plans' | 'settings'
 
@@ -54,7 +54,7 @@ export function Sidebar({
   return (
     <>
       <nav className="sb">
-        <div className="app"><img className="logo" src={flameLogo} alt="" /><b>CodeBurn</b></div>
+        <div className="app"><FlameMark size={20} live /><b>CodeBurn</b></div>
         {NAV_ITEMS.map(item => (
           <div
             key={item.id}
