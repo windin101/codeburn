@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { CATEGORY_LABELS, type ProjectSummary, type TaskCategory, type DateRange } from './types.js'
 import { type PeriodData, type ProviderCost, type BreakdownArrays, type MenubarPayload, type ClaudeConfigSelector, buildMenubarPayload } from './menubar-json.js'
-import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource } from './parser.js'
+import { parseAllSessions, filterProjectsByName, filterProjectsByDays, filterProjectsByClaudeConfigSource, isSessionHydrationComplete } from './parser.js'
 import { findUnpricedModels, getLocalModelSavingsConfigHash, getPriceOverridesConfigHash, getShortModelName } from './models.js'
 import { getAllProviders, safeDiscoverSessions } from './providers/index.js'
 import { claude, getClaudeConfigDirs, getDesktopSessionsDir } from './providers/claude.js'
@@ -11,11 +11,12 @@ import { aggregateModelEfficiency } from './model-efficiency.js'
 import { aggregateModels } from './models-report.js'
 import { scanAndDetect } from './optimize.js'
 import { getDaysInRange, ensureCacheHydrated, loadDailyCache, emptyCache, BACKFILL_DAYS, toDateString, type DailyCache } from './daily-cache.js'
+import { buildGranularHistory } from './granular-history.js'
 
 export function buildPeriodData(label: string, projects: ProjectSummary[]): PeriodData {
   const sessions = projects.flatMap(p => p.sessions)
   const catTotals: Record<string, { turns: number; cost: number; savingsUSD: number; editTurns: number; oneShotTurns: number }> = {}
-  const modelTotals: Record<string, { calls: number; cost: number; savingsUSD: number; tokens: number }> = {}
+  const modelTotals: Record<string, { calls: number; cost: number; savingsUSD: number; estimatedCostUSD: number; tokens: number }> = {}
   let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0
 
   for (const sess of sessions) {
@@ -32,10 +33,11 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
       catTotals[cat].oneShotTurns += d.oneShotTurns
     }
     for (const [model, d] of Object.entries(sess.modelBreakdown)) {
-      if (!modelTotals[model]) modelTotals[model] = { calls: 0, cost: 0, savingsUSD: 0, tokens: 0 }
+      if (!modelTotals[model]) modelTotals[model] = { calls: 0, cost: 0, savingsUSD: 0, estimatedCostUSD: 0, tokens: 0 }
       modelTotals[model].calls += d.calls
       modelTotals[model].cost += d.costUSD
       modelTotals[model].savingsUSD += d.savingsUSD
+      modelTotals[model].estimatedCostUSD += d.estimatedCostUSD ?? 0
       modelTotals[model].tokens += d.tokens.inputTokens + d.tokens.outputTokens + d.tokens.cacheReadInputTokens + d.tokens.cacheCreationInputTokens
     }
   }
@@ -44,6 +46,7 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
     label,
     cost: projects.reduce((s, p) => s + p.totalCostUSD, 0),
     savingsUSD: projects.reduce((s, p) => s + p.totalSavingsUSD, 0),
+    estimatedCostUSD: projects.reduce((s, p) => s + (p.totalEstimatedCostUSD ?? 0), 0),
     calls: projects.reduce((s, p) => s + p.totalApiCalls, 0),
     sessions: projects.reduce((s, p) => s + p.sessions.length, 0),
     inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
@@ -52,7 +55,7 @@ export function buildPeriodData(label: string, projects: ProjectSummary[]): Peri
       .map(([cat, d]) => ({ name: CATEGORY_LABELS[cat as TaskCategory] ?? cat, ...d })),
     models: Object.entries(modelTotals)
       .sort(([, a], [, b]) => b.cost - a.cost)
-      .map(([name, d]) => ({ name, calls: d.calls, cost: d.cost, savingsUSD: d.savingsUSD })),
+      .map(([name, d]) => ({ name, calls: d.calls, cost: d.cost, savingsUSD: d.savingsUSD, estimatedCostUSD: d.estimatedCostUSD })),
     unpricedModels: findUnpricedModels(Object.entries(modelTotals)
       .map(([model, d]) => ({ model, calls: d.calls, cost: d.cost, tokens: d.tokens }))),
   }
@@ -71,6 +74,9 @@ async function hydrateCache(): Promise<DailyCache> {
       (range) => parseAllSessions(range, 'all'),
       aggregateProjectsIntoDays,
       getDailyCacheConfigHash(),
+      // Never finalize the daily history off a partial (interrupted) session
+      // hydration — that is what froze empty older days into the chart.
+      isSessionHydrationComplete,
     )
   } catch (err) {
     // Previously swallowed silently, which turned any backfill failure into an
@@ -93,6 +99,10 @@ export type AggregateOpts = {
   daysSelection?: { range: DateRange; label: string; days: Set<string> } | null
   optimize?: boolean
   claudeConfigSourceId?: string | null
+  /// Build the granular per-bucket timeline (`history.timeline`). Defaults to
+  /// true. The desktop app never renders it, so it passes `--no-timeline` to
+  /// skip the buildGranularHistory pass on every menubar poll.
+  timeline?: boolean
 }
 
 type ConfigOption = { id: string; label: string; path: string }
@@ -230,7 +240,31 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   if (!effectivelyScoped) {
     if (isAllProviders) {
       cache = await hydrateCache()
-      const todayProjects = await getTodayAllProjects()
+      const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
+      // Single all-provider scan for the requested window. Previously the overview
+      // parsed every provider TWICE — once over todayRange and once over the full
+      // period — even though the period scan already contains today's turns. Scan
+      // once here and derive the "today" slice from it below: aggregateProjects-
+      // IntoDays buckets by each turn's own timestamp, so a period scan's today
+      // slice is identical to a dedicated today scan's. A purely historical window
+      // (ends before today) never reaches today, so its separate today scan — the
+      // one the always-on daily-history strip needs — is left to run.
+      let rawScan: ProjectSummary[]
+      if (isTodayOnly) {
+        rawScan = fp(await parseAllSessions(todayRange, 'all'))
+        scanProjects = rawScan
+        scanRange = todayRange
+      } else {
+        rawScan = fp(await parseAllSessions(periodInfo.range, 'all'))
+        scanProjects = daysSelection ? filterProjectsByDays(rawScan, daysSelection.days) : rawScan
+        scanRange = periodInfo.range
+      }
+      // Seed the today memo from the un-daysSelection rawScan so the always-on
+      // daily-history strip still shows today even when the heatmap day filter
+      // excludes it (matching the old dedicated today scan, which ignored it).
+      if (rangeEndStr >= todayStr) {
+        todayAllDays = aggregateProjectsIntoDays(rawScan).filter(d => d.date === todayStr)
+      }
       const todayDays = await getTodayAllDays()
       const historicalDays = rangeStartStr <= historicalRangeEndStr
         ? getDaysInRange(cache, rangeStartStr, historicalRangeEndStr)
@@ -239,15 +273,6 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       const unfilteredDays = [...historicalDays, ...todayInRange].sort((a, b) => a.date.localeCompare(b.date))
       const allDays = daysSelection ? unfilteredDays.filter(d => daysSelection.days.has(d.date)) : unfilteredDays
       currentData = buildPeriodDataFromDays(allDays, periodInfo.label)
-      const isTodayOnly = rangeStartStr === todayStr && rangeEndStr === todayStr
-      if (isTodayOnly) {
-        scanProjects = todayProjects
-        scanRange = todayRange
-      } else {
-        const rawProjects = fp(await parseAllSessions(periodInfo.range, 'all'))
-        scanProjects = daysSelection ? filterProjectsByDays(rawProjects, daysSelection.days) : rawProjects
-        scanRange = periodInfo.range
-      }
     } else {
       cache = await loadDailyCache()
       const rawProviderProjects = fp(await parseAllSessions(periodInfo.range, pf))
@@ -259,6 +284,10 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
     }
   }
   if (isAllProviders) {
+    // Load-bearing overwrite: the daily-cache path above never carries
+    // estimatedCostUSD (DailyEntry has no such field), so this fresh-parse
+    // rebuild is what keeps the estimated marker alive on cached periods.
+    // Removing it as redundant silently drops the flag.
     currentData = buildPeriodData(periodInfo.label, scanProjects)
   }
   claudeConfigs = claudeConfigs ?? await claudeConfigSelector(scanProjects, null)
@@ -286,10 +315,10 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       }
     }
     for (const [name, cost] of Object.entries(providerTotals)) {
-      providers.push({ name: displayNameByName.get(name) ?? name, cost })
+      providers.push({ name, displayName: displayNameByName.get(name) ?? name, cost })
     }
     if (providers.length === 0 && claudeConfigs?.selectedId) {
-      providers.push({ name: displayNameByName.get('claude') ?? 'Claude', cost: 0 })
+      providers.push({ name: 'claude', displayName: displayNameByName.get('claude') ?? 'Claude', cost: 0 })
     }
   } else if (isAllProviders) {
     const unfilteredProviderDays = [
@@ -304,16 +333,15 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
       }
     }
     for (const [name, cost] of Object.entries(providerTotals)) {
-      providers.push({ name: displayNameByName.get(name) ?? name, cost })
+      providers.push({ name, displayName: displayNameByName.get(name) ?? name, cost })
     }
     for (const p of allProviders) {
-      if (providers.some(pc => pc.name === p.displayName)) continue
+      if (providers.some(pc => pc.name === p.name)) continue
       const sources = await safeDiscoverSessions(p)
-      if (sources.length > 0) providers.push({ name: p.displayName, cost: 0 })
+      if (sources.length > 0) providers.push({ name: p.name, displayName: p.displayName, cost: 0 })
     }
   } else {
-    const display = displayNameByName.get(pf) ?? pf
-    providers.push({ name: display, cost: currentData.cost })
+    providers.push({ name: pf, displayName: displayNameByName.get(pf) ?? pf, cost: currentData.cost })
   }
 
   // DAILY HISTORY (last 365 days)
@@ -518,5 +546,7 @@ export async function buildMenubarPayloadForRange(periodInfo: PeriodInfo, opts: 
   })()
 
   const optimize = opts.optimize === false ? null : await scanAndDetect(scanProjects, scanRange)
-  return buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns, claudeConfigs)
+  const granularRange = opts.daysSelection?.range ?? scanRange
+  const granularHistory = opts.timeline === false ? undefined : buildGranularHistory(scanProjects, granularRange)
+  return buildMenubarPayload(currentData, providers, optimize, dailyHistory, retryTax, routingWaste, breakdowns, claudeConfigs, granularHistory)
 }

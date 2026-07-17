@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 import AppKit
 import Observation
@@ -12,6 +13,25 @@ private let statusItemWidth: CGFloat = NSStatusItem.variableLength
 private let popoverWidth: CGFloat = 360
 private let popoverHeight: CGFloat = 660
 private let menubarTitleFontSize: CGFloat = 13
+
+enum SubscriptionRefreshBackoff {
+    static let initialDelaySeconds: TimeInterval = TimeInterval(refreshIntervalSeconds)
+    static let maxJitterSeconds: TimeInterval = 5
+
+    static func delay(
+        failureCount: Int,
+        cadence: TimeInterval,
+        jitterUnit: Double
+    ) -> TimeInterval {
+        guard cadence > 0 else { return 0 }
+
+        let exponent = min(max(failureCount, 1) - 1, 10)
+        let exponential = min(cadence, initialDelaySeconds * pow(2, Double(exponent)))
+        let normalizedJitter = min(max(jitterUnit, 0), 1)
+        let jitter = normalizedJitter * min(maxJitterSeconds, cadence)
+        return min(cadence, exponential + jitter)
+    }
+}
 
 @main
 struct CodeBurnApp: App {
@@ -270,6 +290,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private var lastRefreshTime: Date = .distantPast
+    /// Anchors the shallow provider-root snapshot only after a complete usage
+    /// refresh succeeds. It sits beside the cadence anchor so a failed fetch
+    /// never makes a later unchanged tick look successful.
+    private var lastSuccessfulUsageDataSnapshot: UsageDataSnapshot?
+    private var lastSuccessfulUsageDataSnapshotAt: Date?
+
+    private func recordSuccessfulUsageDataSnapshot() {
+        lastSuccessfulUsageDataSnapshot = UsageDataChangeGuard.snapshot()
+        lastSuccessfulUsageDataSnapshotAt = Date()
+    }
+
+    private func shouldSkipBackgroundUsageRefresh() -> Bool {
+        let current = UsageDataChangeGuard.snapshot()
+        let shouldSkip = UsageDataChangeGuard.shouldSkip(
+            current: current,
+            lastSuccessful: lastSuccessfulUsageDataSnapshot,
+            lastSuccessAt: lastSuccessfulUsageDataSnapshotAt,
+            force: false
+        )
+        if shouldSkip {
+            NSLog("CodeBurn: skipping unchanged background usage refresh")
+        }
+        return shouldSkip
+    }
 
     @discardableResult
     private func clearStaleForceRefreshIfNeeded(now: Date = Date()) -> Bool {
@@ -317,7 +361,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         return false
     }
 
-    private func refreshStatusPayloadIfNeeded(reason: String, force: Bool = false, minAgeSeconds: TimeInterval = 0) {
+    private func refreshStatusPayloadIfNeeded(
+        reason: String,
+        force: Bool = false,
+        minAgeSeconds: TimeInterval = 0,
+        qualityOfService: QualityOfService = .userInitiated
+    ) {
         let now = Date()
         _ = clearStaleStatusPayloadRefreshIfNeeded(now: now)
         guard statusPayloadRefreshTask == nil else { return }
@@ -341,7 +390,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let activity = ProcessInfo.processInfo.beginActivity(
                 options: .background, reason: "CodeBurn status refresh")
             defer { ProcessInfo.processInfo.endActivity(activity) }
-            await self.store.refreshQuietly(period: menubarPeriod, force: true)
+            let succeeded = await self.store.refreshQuietly(
+                period: menubarPeriod,
+                force: true,
+                qualityOfService: qualityOfService
+            )
+            if succeeded {
+                self.recordSuccessfulUsageDataSnapshot()
+            }
             self.refreshStatusButton()
             guard self.statusPayloadRefreshGeneration == generation, !Task.isCancelled else { return }
             self.statusPayloadRefreshTask = nil
@@ -349,11 +405,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    private func forceRefresh(bypassRateLimit: Bool = false, forceQuota: Bool = false) {
+    private func forceRefresh(
+        bypassRateLimit: Bool = false,
+        forceQuota: Bool = false,
+        qualityOfService: QualityOfService = .userInitiated
+    ) {
         let now = Date()
         _ = clearStaleForceRefreshIfNeeded(now: now)
         if forceRefreshTask != nil {
-            refreshStatusPayloadIfNeeded(reason: "blocked force refresh")
+            if qualityOfService != .utility || !shouldSkipBackgroundUsageRefresh() {
+                refreshStatusPayloadIfNeeded(reason: "blocked force refresh", qualityOfService: qualityOfService)
+            }
         }
         guard forceRefreshTask == nil else { return }
         if !bypassRateLimit {
@@ -368,9 +430,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let activity = ProcessInfo.processInfo.beginActivity(
                 options: .background, reason: "CodeBurn refresh")
             defer { ProcessInfo.processInfo.endActivity(activity) }
-            async let main: Void = refreshUsagePayloads(force: true, showLoading: true)
+            async let main = refreshUsagePayloads(
+                force: true,
+                showLoading: true,
+                qualityOfService: qualityOfService
+            )
             async let quotas: Bool = refreshLiveQuotaProgressIfDue(force: forceQuota)
-            _ = await main
+            let mainSucceeded = await main
+            if mainSucceeded {
+                recordSuccessfulUsageDataSnapshot()
+            }
             refreshStatusButton()
             _ = await quotas
             await MainActor.run { [weak self] in
@@ -382,7 +451,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    private func refreshUsagePayloads(force: Bool, showLoading: Bool = false) async {
+    private func refreshUsagePayloads(
+        force: Bool,
+        showLoading: Bool = false,
+        qualityOfService: QualityOfService = .userInitiated
+    ) async -> Bool {
         let menubarPeriod = store.menubarPeriod
 
         // With the popover closed, only the payloads the status item actually
@@ -391,25 +464,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // is refreshed by refreshPayloadForPopoverOpen the moment it opens,
         // so a closed-popover tick never pays for it (#647).
         if !(popover?.isShown ?? false) {
-            async let menubar: Void = store.refreshQuietly(period: menubarPeriod, force: force)
-            async let today: Void = menubarPeriod != .today
-                ? store.refreshQuietly(period: .today, force: force)
-                : ()
-            _ = await (menubar, today)
-            return
+            async let menubar = store.refreshQuietly(
+                period: menubarPeriod,
+                force: force,
+                qualityOfService: qualityOfService
+            )
+            async let today = menubarPeriod != .today
+                ? store.refreshQuietly(period: .today, force: force, qualityOfService: qualityOfService)
+                : true
+            let (menubarSucceeded, todaySucceeded) = await (menubar, today)
+            return menubarSucceeded && todaySucceeded
         }
 
         let needsMenubarPayload = store.selectedPeriod != menubarPeriod || store.selectedProvider != .all
         let needsTodayPayload = (store.selectedPeriod != .today || store.selectedProvider != .all) && menubarPeriod != .today
 
-        async let visible: Void = store.refresh(includeOptimize: false, force: force, showLoading: showLoading)
-        async let menubar: Void = needsMenubarPayload
-            ? store.refreshQuietly(period: menubarPeriod, force: force)
-            : ()
-        async let today: Void = needsTodayPayload
-            ? store.refreshQuietly(period: .today, force: force)
-            : ()
-        _ = await (visible, menubar, today)
+        async let visible = store.refresh(
+            includeOptimize: false,
+            force: force,
+            showLoading: showLoading,
+            qualityOfService: qualityOfService
+        )
+        async let menubar = needsMenubarPayload
+            ? store.refreshQuietly(period: menubarPeriod, force: force, qualityOfService: qualityOfService)
+            : true
+        async let today = needsTodayPayload
+            ? store.refreshQuietly(period: .today, force: force, qualityOfService: qualityOfService)
+            : true
+        let (visibleSucceeded, menubarSucceeded, todaySucceeded) = await (visible, menubar, today)
+        return visibleSucceeded && menubarSucceeded && todaySucceeded
     }
 
     /// Loads the currency code persisted by `codeburn currency` so a relaunch picks up where
@@ -436,28 +519,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     fileprivate var lastSubscriptionRefreshAt: Date?
     fileprivate var lastCodexRefreshAt: Date?
+    private var claudeQuotaFailureCount = 0
+    private var nextClaudeQuotaRefreshAt: Date?
 
     @discardableResult
-    private func refreshLiveQuotaProgressIfDue(force: Bool = false) async -> Bool {
+    private func refreshLiveQuotaProgressIfDue(
+        force: Bool = false,
+        forceClaude: Bool = false,
+        forceCodex: Bool = false
+    ) async -> Bool {
         let cadence = SubscriptionRefreshCadence.current
-        if !force && cadence == .manual { return false }
+        let autoRefreshAllowed = cadence != .manual
+        if !force && !forceClaude && !forceCodex && !autoRefreshAllowed { return false }
 
         let now = Date()
-        let threshold = force ? 0 : TimeInterval(cadence.rawValue)
-        let shouldRefreshClaude = force || now.timeIntervalSince(lastSubscriptionRefreshAt ?? .distantPast) >= threshold
-        let shouldRefreshCodex = force || now.timeIntervalSince(lastCodexRefreshAt ?? .distantPast) >= threshold
+        let threshold = TimeInterval(cadence.rawValue)
+        let claudeDue = autoRefreshAllowed && (
+            nextClaudeQuotaRefreshAt.map { now >= $0 } ??
+            (now.timeIntervalSince(lastSubscriptionRefreshAt ?? .distantPast) >= threshold)
+        )
+        let shouldRefreshClaude = force || forceClaude || claudeDue
+        let shouldRefreshCodex = force || forceCodex || (
+            autoRefreshAllowed && now.timeIntervalSince(lastCodexRefreshAt ?? .distantPast) >= threshold
+        )
         guard shouldRefreshClaude || shouldRefreshCodex else { return false }
+
+        if shouldRefreshClaude {
+            // The cadence anchor represents the start of an attempt, even if
+            // the provider fails. Failures get their own shorter backoff below.
+            lastSubscriptionRefreshAt = now
+        }
 
         switch (shouldRefreshClaude, shouldRefreshCodex) {
         case (true, true):
             async let claude = refreshClaudeQuotaSingleFlight()
             async let codex = refreshCodexQuotaSingleFlight()
-            if await claude { lastSubscriptionRefreshAt = Date() }
-            if await codex { lastCodexRefreshAt = Date() }
+            let claudeSucceeded = await claude
+            let codexSucceeded = await codex
+            finishClaudeQuotaRefresh(
+                succeeded: claudeSucceeded,
+                attemptedAt: now,
+                cadence: threshold
+            )
+            if codexSucceeded { lastCodexRefreshAt = Date() }
         case (true, false):
-            if await refreshClaudeQuotaSingleFlight() {
-                lastSubscriptionRefreshAt = Date()
-            }
+            let succeeded = await refreshClaudeQuotaSingleFlight()
+            finishClaudeQuotaRefresh(succeeded: succeeded, attemptedAt: now, cadence: threshold)
         case (false, true):
             if await refreshCodexQuotaSingleFlight() {
                 lastCodexRefreshAt = Date()
@@ -466,6 +573,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             break
         }
         return true
+    }
+
+    private func finishClaudeQuotaRefresh(
+        succeeded: Bool,
+        attemptedAt: Date,
+        cadence: TimeInterval
+    ) {
+        guard !succeeded else {
+            claudeQuotaFailureCount = 0
+            nextClaudeQuotaRefreshAt = nil
+            return
+        }
+
+        claudeQuotaFailureCount += 1
+        let delay = SubscriptionRefreshBackoff.delay(
+            failureCount: claudeQuotaFailureCount,
+            cadence: cadence,
+            jitterUnit: Double.random(in: 0...1)
+        )
+        nextClaudeQuotaRefreshAt = attemptedAt.addingTimeInterval(delay)
     }
 
     private func refreshClaudeQuotaSingleFlight() async -> Bool {
@@ -502,12 +629,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let now = Date()
         let claudeElapsed = now.timeIntervalSince(lastSubscriptionRefreshAt ?? .distantPast)
         let codexElapsed = now.timeIntervalSince(lastCodexRefreshAt ?? .distantPast)
-        guard claudeElapsed >= interactiveQuotaRefreshFloorSeconds ||
-              codexElapsed >= interactiveQuotaRefreshFloorSeconds else { return }
+        let refreshClaude = claudeElapsed >= interactiveQuotaRefreshFloorSeconds
+        let refreshCodex = codexElapsed >= interactiveQuotaRefreshFloorSeconds
+        guard refreshClaude || refreshCodex else { return }
 
         Task { [weak self] in
             guard let self else { return }
-            _ = await self.refreshLiveQuotaProgressIfDue(force: true)
+            _ = await self.refreshLiveQuotaProgressIfDue(
+                forceClaude: refreshClaude,
+                forceCodex: refreshCodex
+            )
         }
     }
 
@@ -532,7 +663,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         Task { [weak self] in
             guard let self else { return }
-            await self.store.recoverFromStuckLoading()
+            let succeeded = await self.store.recoverFromStuckLoading()
+            if succeeded {
+                self.recordSuccessfulUsageDataSnapshot()
+            }
             self.refreshStatusButton()
         }
     }
@@ -580,15 +714,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let shouldForceRefresh = forcePayload ||
             ((clearedStaleForceRefresh || clearedStaleLoading) && recoveryRespawnAllowed) ||
             intervalElapsed
+        let popoverOpen = popover?.isShown ?? false
+        let interactiveUsageRefresh = forcePayload || popoverOpen
+        let qualityOfService: QualityOfService = interactiveUsageRefresh ? .userInitiated : .utility
+        var skippedUnchangedUsageRefresh = false
 
         if shouldForceRefresh {
-            forceRefresh(bypassRateLimit: true, forceQuota: forceQuota)
+            skippedUnchangedUsageRefresh = !interactiveUsageRefresh && shouldSkipBackgroundUsageRefresh()
+            if !skippedUnchangedUsageRefresh {
+                forceRefresh(
+                    bypassRateLimit: true,
+                    forceQuota: forceQuota,
+                    qualityOfService: qualityOfService
+                )
+            }
         }
 
         let forceRefreshWasBlocked = hadForceRefreshInFlight && forceRefreshTask != nil
         if statusPayloadStale && (!shouldForceRefresh || forceRefreshWasBlocked || clearedStaleStatusRefresh) {
             guard forcePayload || interval != nil else { return }
-            refreshStatusPayloadIfNeeded(reason: reason, force: forcePayload, minAgeSeconds: interval ?? 0)
+            if !interactiveUsageRefresh && (skippedUnchangedUsageRefresh || shouldSkipBackgroundUsageRefresh()) {
+                return
+            }
+            refreshStatusPayloadIfNeeded(
+                reason: reason,
+                force: forcePayload,
+                minAgeSeconds: interval ?? 0,
+                qualityOfService: qualityOfService
+            )
         }
     }
 
@@ -649,9 +802,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             // "Refresh Now" should refresh the menubar payload AND every
             // connected provider's live quota. The user's intent is "make
             // this match reality right now."
-            async let payload: Void = self.refreshUsagePayloads(force: true, showLoading: true)
+            async let payload = self.refreshUsagePayloads(
+                force: true,
+                showLoading: true,
+                qualityOfService: .userInitiated
+            )
             async let quotas: Bool = self.refreshLiveQuotaProgressIfDue(force: true)
-            _ = await payload
+            let payloadSucceeded = await payload
+            if payloadSucceeded {
+                self.recordSuccessfulUsageDataSnapshot()
+            }
             guard self.manualRefreshGeneration == generation, !Task.isCancelled else { return }
             self.lastRefreshTime = Date()
             self.refreshStatusButton()
@@ -673,6 +833,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func resetSubscriptionCadenceAnchor() {
         lastSubscriptionRefreshAt = nil
         lastCodexRefreshAt = nil
+        claudeQuotaFailureCount = 0
+        nextClaudeQuotaRefreshAt = nil
     }
 
     private func observeStore() {
